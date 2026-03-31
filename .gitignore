@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+
+# virtual environments
+.venv/
+venv/
+env/
+
+# local data and models
+data/raw/
+data/processed/
+models/
+checkpoints/
+outputs/
+logs/
+
+# OS / editor noise
+.DS_Store
+
+.claude/
+.vscode/

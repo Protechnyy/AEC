@@ -52,13 +52,18 @@ def call_llm(messages: List[Dict[str, str]], model: str = "gpt-4o") -> str:
         raise RuntimeError(
             "OPENAI_API_KEY environment variable is not set; cannot call OpenAI API."
         )
-    openai.api_key = api_key
-    response = openai.ChatCompletion.create(
+    # openai >= 1.0 uses a client-based API.
+    # OPENAI_BASE_URL lets callers redirect to a local vLLM / Ollama server
+    # without changing any other code (run_inference.py sets this env var
+    # when --base_url is passed on the CLI).
+    base_url = os.getenv("OPENAI_BASE_URL") or None
+    client = openai.OpenAI(api_key=api_key, base_url=base_url)
+    response = client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=0.0,
     )
-    return response.choices[0].message["content"].strip()
+    return response.choices[0].message.content.strip()
 
 
 def extract_trigger_event_pairs(

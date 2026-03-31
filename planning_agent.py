@@ -124,3 +124,60 @@ class PlanningAgent:
         # sort by confidence descending
         candidates.sort(key=lambda h: h.confidence, reverse=True)
         return candidates[:k]
+
+    def generate_hypotheses_with_llm(
+        self,
+        text: str,
+        event_definitions: str,
+        max_candidates: int = 6,
+    ) -> List[Hypothesis]:
+        """Generate trigger hypotheses by querying a large language model.
+
+        This method calls :func:`~aec.llm_utils.extract_trigger_event_pairs`
+        which prompts an LLM (default: GPT-4o) with the input *text* and a
+        string of Python dataclass event definitions.  The LLM returns a list
+        of ``(trigger, event_type)`` pairs which are converted into ranked
+        :class:`Hypothesis` objects.  Hypotheses are assigned decreasing
+        confidence scores in the order returned by the model, reflecting the
+        assumption that the model lists its most confident predictions first.
+
+        Parameters
+        ----------
+        text : str
+            The input sentence or paragraph to analyse.
+        event_definitions : str
+            A string containing Python dataclass definitions for all relevant
+            event types (as returned by
+            :meth:`~aec.ontology.OntologyManager.build_definitions`).
+        max_candidates : int, optional
+            Maximum number of hypotheses to return.  Defaults to 6.
+
+        Returns
+        -------
+        List[Hypothesis]
+            A list of hypotheses sorted by descending confidence.  An empty
+            list is returned if the LLM call fails or produces no parseable
+            output.
+        """
+        from .llm_utils import extract_trigger_event_pairs  # local import to avoid hard dep
+
+        pairs = extract_trigger_event_pairs(text, event_definitions)
+        hypotheses: List[Hypothesis] = []
+        n = len(pairs[:max_candidates])
+        for rank, (trigger, event_type) in enumerate(pairs[:max_candidates]):
+            # Assign confidence scores that decrease linearly from 1.0
+            confidence = 1.0 - rank * (0.9 / max(n, 1))
+            confidence = max(0.1, confidence)
+            rationale = (
+                f"LLM identified '{trigger}' as a trigger for event type "
+                f"'{event_type}' (rank {rank + 1}/{n})."
+            )
+            hypotheses.append(
+                Hypothesis(
+                    trigger=trigger,
+                    event_type=event_type,
+                    confidence=confidence,
+                    rationale=rationale,
+                )
+            )
+        return hypotheses
