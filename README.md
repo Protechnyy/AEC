@@ -12,41 +12,20 @@ AEC treats zero-shot event extraction as a **code generation** problem. Four spe
 
 ## Table of Contents
 
-1. [Quick Demo (no data, no API key)](#1-quick-demo)
-2. [Environment Setup](#2-environment-setup)
-3. [Dataset Acquisition](#3-dataset-acquisition)
-4. [TextEE Preprocessing](#4-textee-preprocessing)
-5. [LLM Setup](#5-llm-setup)
-6. [Running Inference](#6-running-inference)
-7. [Evaluation](#7-evaluation)
-8. [Repository Structure](#8-repository-structure)
-9. [Citation](#9-citation)
+1. [Environment Setup](#1-environment-setup)
+2. [Dataset Acquisition](#2-dataset-acquisition)
+3. [TextEE Preprocessing](#3-textee-preprocessing)
+4. [LLM Setup](#4-llm-setup)
+5. [Running Inference](#5-running-inference)
+6. [Evaluation](#6-evaluation)
+7. [Repository Structure](#7-repository-structure)
+8. [Citation](#8-citation)
 
 ---
 
-## 1. Quick Demo
+## 1. Environment Setup
 
-Run the heuristic pipeline on built-in examples — **no data download, no API key needed**:
-
-```bash
-conda activate AEC
-cd /home/users/yy/code
-python -m AEC.demo
-```
-
-Expected output:
-```
-Text  : The soldiers attacked the village with mortars, killing dozens [...]
-Schema: Attack  roles=['attacker', 'victim', 'weapon', 'place']
-Result: trigger='attack'  event_type='Attack'
-...
-```
-
----
-
-## 2. Environment Setup
-
-### 2.1 Create conda environment
+### 1.1 Create conda environment
 
 ```bash
 conda create -n AEC python=3.10 -y
@@ -66,16 +45,9 @@ pandas>=1.3.0
 scikit-learn>=1.0.0
 ```
 
-### 2.2 Verify installation
-
-```bash
-cd /home/users/yy/code
-python -m AEC.demo          # should print 5 event extraction results
-```
-
 ---
 
-## 3. Dataset Acquisition
+## 2. Dataset Acquisition
 
 The paper evaluates on **five datasets** from the TextEE benchmark.  
 Raw data must be obtained independently; preprocessing is done via the [TextEE](https://github.com/ej0cl6/TextEE) framework.
@@ -197,11 +169,11 @@ ls CASIE/data/
 
 ---
 
-## 4. TextEE Preprocessing
+## 3. TextEE Preprocessing
 
 All five datasets must be converted to TextEE's standardized JSON-lines format before inference. TextEE provides preprocessors for each dataset.
 
-### 4.1 Install TextEE
+### 3.1 Install TextEE
 
 ```bash
 git clone https://github.com/ej0cl6/TextEE.git
@@ -210,7 +182,7 @@ pip install -r requirements.txt   # or: conda env create -f env.yml
 python -m spacy download en_core_web_lg
 ```
 
-### 4.2 Expected output structure
+### 3.2 Expected output structure
 
 After preprocessing, TextEE produces split files at:
 ```
@@ -239,7 +211,7 @@ Each line in these files is a JSON object:
 }
 ```
 
-### 4.3 Run preprocessing
+### 3.3 Run preprocessing
 
 ```bash
 cd TextEE
@@ -277,7 +249,7 @@ python TextEE/preprocess.py \
 
 > **Note**: The exact `--dataset` flag names and argument structure may vary. Check `TextEE/preprocess.py --help` for the current interface. If the script is not at that path, look for it under `TextEE/TextEE/preprocess.py`.
 
-### 4.4 Copy preprocessed data to AEC
+### 3.4 Copy preprocessed data to AEC
 
 ```bash
 # From the TextEE directory:
@@ -302,7 +274,7 @@ AEC/data/raw/TextEE/
 
 ---
 
-## 5. LLM Setup
+## 4. LLM Setup
 
 ### Option A — OpenAI API (GPT-4o / GPT-3.5-turbo)
 
@@ -364,23 +336,26 @@ ollama pull llama3.1:8b
 
 ---
 
-## 6. Running Inference
+## 5. Running Inference
 
-### 6.1 Full pipeline on a dataset
+All commands below are run from the **AEC directory** (`/home/users/yy/code/AEC`).
+
+### 5.1 Full pipeline on a dataset
 
 ```bash
-cd /home/users/yy/code
+conda activate AEC
+cd /home/users/yy/code/AEC
 
 # --- GPT-4o ---
 OPENAI_API_KEY=sk-... \
-python -m AEC.run_inference \
+python run_inference.py \
     --dataset ace05-en \
     --model gpt-4o \
     --k 3 --t 3
 
-# --- Llama-3-8B via vLLM (start server first, see §5B) ---
+# --- Llama-3-8B via vLLM (start server first, see §4B) ---
 OPENAI_API_KEY=EMPTY \
-python -m AEC.run_inference \
+python run_inference.py \
     --dataset ace05-en \
     --model meta-llama/Meta-Llama-3-8B-Instruct \
     --base_url http://localhost:8000/v1 \
@@ -388,7 +363,7 @@ python -m AEC.run_inference \
 
 # --- Llama-3.1-8B via Ollama ---
 OPENAI_API_KEY=ollama \
-python -m AEC.run_inference \
+python run_inference.py \
     --dataset casie \
     --model llama3.1:8b \
     --base_url http://localhost:11434/v1 \
@@ -396,18 +371,17 @@ python -m AEC.run_inference \
 
 # --- GPT-3.5-turbo (cheaper, lower scores) ---
 OPENAI_API_KEY=sk-... \
-python -m AEC.run_inference \
+python run_inference.py \
     --dataset fewevent \
     --model gpt-3.5-turbo \
     --k 3 --t 3
 ```
 
-### 6.2 All five datasets (paper reproduction)
+### 5.2 All five datasets (paper reproduction)
 
 ```bash
 #!/bin/bash
-# run_all_datasets.sh
-# Run from: /home/users/yy/code
+# Run from: /home/users/yy/code/AEC
 
 DATASETS=("ace05-en" "fewevent" "genia2011" "speed" "casie")
 MODEL="meta-llama/Meta-Llama-3-8B-Instruct"
@@ -415,7 +389,7 @@ BASE_URL="http://localhost:8000/v1"
 
 for DATASET in "${DATASETS[@]}"; do
     echo "=== Running $DATASET ==="
-    OPENAI_API_KEY=EMPTY python -m AEC.run_inference \
+    OPENAI_API_KEY=EMPTY python run_inference.py \
         --dataset "$DATASET" \
         --model "$MODEL" \
         --base_url "$BASE_URL" \
@@ -424,7 +398,7 @@ for DATASET in "${DATASETS[@]}"; do
 done
 ```
 
-### 6.3 CLI flags reference
+### 5.3 CLI flags reference
 
 | Flag | Default | Description |
 |---|---|---|
@@ -441,21 +415,9 @@ done
 | `--no_eval` | off | Skip auto-evaluation after inference |
 | `--eval_only FILE` | — | Only evaluate an existing predictions file |
 
-### 6.4 Smoke test (10 samples, no full dataset required)
-
-```bash
-# Works even before downloading full datasets if you have any 10-sample test file
-OPENAI_API_KEY=sk-... \
-python -m AEC.run_inference \
-    --dataset ace05-en \
-    --model gpt-4o \
-    --max_samples 10 \
-    --no_eval
-```
-
 ---
 
-## 7. Evaluation
+## 6. Evaluation
 
 Evaluation runs automatically after inference. Predictions are saved to:
 ```
@@ -463,12 +425,12 @@ AEC/outputs/{dataset}_{model}_predictions.json
 AEC/outputs/{dataset}_{model}_predictions_scores.json   ← F1 scores (×100)
 ```
 
-### 7.1 Manually evaluate an existing predictions file
+### 6.1 Manually evaluate an existing predictions file
 
 ```bash
-cd /home/users/yy/code
-python -m AEC.run_inference \
-    --eval_only AEC/outputs/ace05-en_gpt4o_predictions.json
+cd /home/users/yy/code/AEC
+python run_inference.py \
+    --eval_only outputs/ace05-en_gpt4o_predictions.json
 ```
 
 Or run the scorer directly:
@@ -478,7 +440,7 @@ python events_scorer.py \
     --input_file ../../outputs/ace05-en_gpt4o_predictions.json
 ```
 
-### 7.2 Metrics
+### 6.2 Metrics
 
 | Metric | Description |
 |---|---|
@@ -489,7 +451,7 @@ python events_scorer.py \
 
 All metrics are **micro-averaged** over three independent runs in the paper.
 
-### 7.3 Reference results (from paper Table 1, Llama3-8B-Instruct)
+### 6.3 Reference results (from paper Table 1, Llama3-8B-Instruct)
 
 | Dataset | Task | TI | TC | AI | AC |
 |---|---|---|---|---|---|
@@ -501,21 +463,19 @@ All metrics are **micro-averaged** over three independent runs in the paper.
 
 ---
 
-## 8. Repository Structure
+## 7. Repository Structure
 
 ```
 AEC/
 ├── __init__.py                  # Package init; exports main classes
-├── aec_pipeline.py              # High-level orchestrator (Algorithm 1)
-├── planning_agent.py            # Agent 2: trigger hypothesis generation
-├── coding_agent.py              # Agent 3: Python code generation
-├── retrieval_agent.py           # Agent 1: exemplar sentence generation
+├── run_inference.py             # ★ Full paper reproduction script
+├── planning_agent.py            # Agent 2: trigger hypothesis generation (LLM)
+├── coding_agent.py              # Agent 3: Python code generation (LLM)
+├── retrieval_agent.py           # Agent 1: exemplar sentence generation (LLM)
 ├── verification_agent.py        # Agent 4: T1/T2/T3 verification checks
 ├── ontology.py                  # Event schema manager
 ├── event_schema.py              # EventSchema / EventObject data classes
 ├── llm_utils.py                 # OpenAI / vLLM API wrapper
-├── run_inference.py             # ★ Full paper reproduction script
-├── demo.py                      # Quick demo (no data needed)
 ├── requirements.txt
 │
 ├── data/
@@ -553,7 +513,7 @@ AEC/
 
 ---
 
-## 9. Citation
+## 8. Citation
 
 If you use this code or the AEC framework, please cite:
 
