@@ -49,123 +49,15 @@ scikit-learn>=1.0.0
 
 ## 2. Dataset Acquisition
 
-The paper evaluates on **five datasets** from the TextEE benchmark.  
-Raw data must be obtained independently; preprocessing is done via the [TextEE](https://github.com/ej0cl6/TextEE) framework.
+All five datasets require preprocessing via [TextEE](https://github.com/ej0cl6/TextEE) before use.
 
-| Dataset | Domain | Task | # Types | Freely Available? |
+| Dataset | Domain | Task | # Types | Source |
 |---|---|---|---|---|
-| `ace05-en` | News | E2E | 33 | ❌ Requires LDC license |
-| `fewevent` | General | ED | 100 | ✅ Public |
-| `genia2011` | Biomedical | E2E | 9 | ✅ Public |
-| `speed` | Epidemiology | ED | 7 | ✅ Public |
-| `casie` | Cybersecurity | E2E | 5 | ✅ Public |
-
----
-
-### Dataset 1 — ACE05-EN (`ace05-en`) ⚠️ License Required
-
-**Source**: LDC (Linguistic Data Consortium)  
-**Catalog number**: [LDC2006T06](https://catalog.ldc.upenn.edu/LDC2006T06)  
-**License**: LDC User Agreement — requires institutional or individual membership.
-
-**Access steps**:
-1. Go to https://catalog.ldc.upenn.edu/LDC2006T06
-2. Register / log in to LDC (free academic registration available)
-3. Purchase or request access (cost varies: ~$0 for LDC members, ~$50–150 for non-members)
-4. Download the corpus archive; extract to a local directory
-
-**What you get**: `~/ldc/ace05/` containing `.sgm` (source text) and `.apf.xml` (annotation) files organized by genre (`bc/`, `bn/`, `nw/`, `un/`, `wl/`, `cts/`).
-
-> **Note**: If you are at a university with an LDC membership, you may access all LDC corpora for free through your institution. Check with your library or IT department.
-
----
-
-### Dataset 2 — FewEvent (`fewevent`) ✅
-
-**Source**: "Meta-Learning with Dynamic-Memory-Based Prototypical Network for Few-Shot Event Detection" (WSDM 2020)  
-**Original repo**: https://github.com/thunlp/FewEvent
-
-```bash
-# Clone the FewEvent repository
-git clone https://github.com/thunlp/FewEvent.git
-# Raw data files are in FewEvent/data/
-ls FewEvent/data/
-# Expected: event_dict_data_dir/, train.json, dev.json, test.json
-```
-
-If the above URL is unavailable, the dataset is also mirrored on Hugging Face:
-```python
-from datasets import load_dataset
-ds = load_dataset("willcb/few-event")
-```
-
-**Format**: Each record has `{"tokens": [...], "event_mentions": [{"event_type": "...", "trigger": {...}}]}`
-
----
-
-### Dataset 3 — GENIA 2011 (`genia2011`) ✅
-
-**Source**: BioNLP Shared Task 2011 — Genia Event (GE) task  
-**Download page**: http://2011.bionlp-st.dbcls.jp/downloads  
-**License**: Freely available for research use
-
-```bash
-# Create raw data directory
-mkdir -p data/raw/genia2011
-
-# Download training, development, and test sets
-wget -P data/raw/genia2011 \
-    http://2011.bionlp-st.dbcls.jp/GE11/downloads/BioNLP-ST_2011_genia_train_data_rev1.tar.gz \
-    http://2011.bionlp-st.dbcls.jp/GE11/downloads/BioNLP-ST_2011_genia_devel_data_rev1.tar.gz \
-    http://2011.bionlp-st.dbcls.jp/GE11/downloads/BioNLP-ST_2011_genia_test_data.tar.gz
-
-# Extract
-cd data/raw/genia2011
-tar -xzf BioNLP-ST_2011_genia_train_data_rev1.tar.gz
-tar -xzf BioNLP-ST_2011_genia_devel_data_rev1.tar.gz
-tar -xzf BioNLP-ST_2011_genia_test_data.tar.gz
-```
-
-**Format**: BioNLP standoff format (`.a1` entity annotations, `.a2` event annotations, `.txt` source text).
-
----
-
-### Dataset 4 — SPEED (`speed`) ✅
-
-**Source**: "Event Detection from Social Media for Epidemic Prediction" (NAACL 2024)  
-**Paper**: https://aclanthology.org/2024.naacl-long.438/
-
-```bash
-# The SPEED dataset can be obtained from the paper authors.
-# Check the paper page or the supplementary materials for a data link.
-# Alternatively, search the ACL Anthology supplementary material:
-# https://aclanthology.org/2024.naacl-long.438.zip
-```
-
-If a GitHub repo is linked in the paper, clone it:
-```bash
-git clone https://github.com/<SPEED-authors>/SPEED.git   # check paper for exact URL
-```
-
-**Format**: JSON lines with `{"text": "...", "event_mentions": [...]}`  
-**Event types**: 7 epidemic-related types (Spread, Prevention, Symptoms, Treatment, etc.)
-
----
-
-### Dataset 5 — CASIE (`casie`) ✅
-
-**Source**: "CASIE: Extracting Cybersecurity Event Information from Text" (AAAI 2020)  
-**GitHub**: https://github.com/Ebiquity/CASIE  
-**License**: Freely available
-
-```bash
-git clone https://github.com/Ebiquity/CASIE.git
-ls CASIE/data/
-# annotation/  source/
-```
-
-**Format**: JSON annotation files + plain text source files.  
-**Event types**: 5 cybersecurity types (Databreach, Ransom, Phishing, DiscoverVulnerability, PatchVulnerability).
+| `ace05-en` | News | E2E | 33 | [LDC2006T06](https://catalog.ldc.upenn.edu/LDC2006T06) |
+| `fewevent` | General | ED | 100 | [GitHub](https://github.com/231sm/Low_Resource_KBP#) |
+| `genia2011` | Biomedical | E2E | 9 | [BioNLP-ST 2011](https://bionlp-st.dbcls.jp/GE/2011/downloads/) |
+| `speed` | Epidemiology | ED | 7 | [NAACL 2024 Paper](https://github.com/PlusLabNLP/SPEED) |
+| `casie` | Cybersecurity | E2E | 5 | [GitHub](https://github.com/Ebiquity/CASIE) |
 
 ---
 
@@ -274,65 +166,27 @@ AEC/data/raw/TextEE/
 
 ---
 
-## 4. LLM Setup
+## 4. LLM Setup (vLLM)
 
-### Option A — OpenAI API (GPT-4o / GPT-3.5-turbo)
+Serve local models via vLLM with an OpenAI-compatible HTTP endpoint. Matches the paper's setup (Llama3-8B-Instruct / Llama3-70B-Instruct).
 
-Best results. Requires an API key.
-
-```bash
-export OPENAI_API_KEY=sk-...
-```
-
-### Option B — Local via vLLM (Recommended for open-source models)
-
-Serves any HuggingFace model behind an OpenAI-compatible HTTP endpoint.  
-Matches the paper's setup (Llama3-8B-Instruct, Llama3-70B-Instruct).
-
-**Requirements**: GPU with ≥16 GB VRAM for the 8B model (≥80 GB total for 70B across 4 GPUs).
+**Requirements**: ≥16 GB VRAM for the 8B model; 4 GPUs (≥80 GB total) for 70B.
 
 ```bash
 pip install vllm
 
-# Get a HuggingFace token for gated models (free):
-# https://huggingface.co/settings/tokens
-# Then accept the Llama 3 license at:
-# https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct
+# Get a HuggingFace token (free): https://huggingface.co/settings/tokens
+# Accept the Llama 3 license: https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct
 
 # Start vLLM server (run in a separate terminal / tmux)
 HF_TOKEN=hf_... \
 vllm serve meta-llama/Meta-Llama-3-8B-Instruct \
     --port 8000 \
-    --tensor-parallel-size 1      # use 4 to match the paper (70B)
+    --tensor-parallel-size 1      # use 4 for the 70B model
 
 # Verify the server is up
 curl http://localhost:8000/v1/models
 ```
-
-### Option C — Local via Ollama (Easiest setup)
-
-Uses 4-bit quantized models. Slightly lower quality than full precision but very easy to run, even on CPU.
-
-```bash
-# Install Ollama: https://ollama.com
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull Llama 3.1 8B (quantized, ~5 GB)
-ollama pull llama3.1:8b
-
-# Ollama serves at http://localhost:11434 by default
-# (auto-starts when you run a model)
-```
-
-### Comparison
-
-| | OpenAI API | vLLM | Ollama |
-|---|---|---|---|
-| Model | GPT-4o / GPT-3.5 | Llama-3-8B (exact paper model) | llama3.1:8b (4-bit) |
-| Matches paper | Best scores | ✅ Exact match | Close |
-| GPU needed | None | ≥16 GB VRAM | Optional |
-| HF token needed | No | Yes (gated model) | No |
-| Setup effort | Low | Medium | Very low |
 
 ---
 
@@ -344,36 +198,13 @@ All commands below are run from the **AEC directory** (`/home/users/yy/code/AEC`
 
 ```bash
 conda activate AEC
-cd /home/users/yy/code/AEC
 
-# --- GPT-4o ---
-OPENAI_API_KEY=sk-... \
-python run_inference.py \
-    --dataset ace05-en \
-    --model gpt-4o \
-    --k 3 --t 3
-
-# --- Llama-3-8B via vLLM (start server first, see §4B) ---
+# Start vLLM server first (see §4)
 OPENAI_API_KEY=EMPTY \
 python run_inference.py \
-    --dataset ace05-en \
+    --dataset casie \
     --model meta-llama/Meta-Llama-3-8B-Instruct \
     --base_url http://localhost:8000/v1 \
-    --k 3 --t 3
-
-# --- Llama-3.1-8B via Ollama ---
-OPENAI_API_KEY=ollama \
-python run_inference.py \
-    --dataset casie \
-    --model llama3.1:8b \
-    --base_url http://localhost:11434/v1 \
-    --k 3 --t 3
-
-# --- GPT-3.5-turbo (cheaper, lower scores) ---
-OPENAI_API_KEY=sk-... \
-python run_inference.py \
-    --dataset fewevent \
-    --model gpt-3.5-turbo \
     --k 3 --t 3
 ```
 

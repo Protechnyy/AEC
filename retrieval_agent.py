@@ -10,22 +10,20 @@ Paper §3.1 (Retrieval Agent)
 The LLM is prompted with the Python dataclass definition of the event schema
 and asked to produce fluent sentences containing a clear trigger word and as
 many populated argument roles as possible.
-
-Note: ``run_inference.py`` implements this agent's logic directly as
-``run_retrieval_agent()``.  The method below mirrors that logic and is
-provided as a callable class interface.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .llm_utils import call_llm
+
 
 @dataclass
 class RetrievalAgent:
     """Retrieval agent that generates exemplar sentences via an LLM."""
 
-    def retrieve_with_llm(
+    def retrieve(
         self,
         schema_definition: str,
         k: int = 3,
@@ -47,20 +45,20 @@ class RetrievalAgent:
         str
             A newline-separated string of *k* exemplar sentences.
         """
-        from .llm_utils import call_llm
-
-        system_prompt = "You are a helpful example generator for event extraction."
-        user_prompt = (
-            f"Given the following event type definition:\n\n"
-            f"{schema_definition}\n\n"
+        system = "You are a helpful example generator for event extraction."
+        user = (
+            f"Given the following event type definition:\n\n{schema_definition}\n\n"
             f"Generate {k} fluent English sentences. Each sentence must:\n"
-            f"1. Contain a clear trigger word or phrase that evokes the event type.\n"
-            f"2. Include textual mentions of as many argument roles as possible.\n"
-            f"3. Be realistic and varied (different triggers, different contexts).\n\n"
-            f"Output exactly one sentence per line, with no numbering or extra commentary."
+            f"1. Contain a clear trigger word or phrase for this event type.\n"
+            f"2. Mention entities filling as many argument roles as possible.\n"
+            f"3. Be realistic and varied.\n\n"
+            f"Output exactly one sentence per line, no numbering."
         )
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
-        return call_llm(messages, model=model)
+        try:
+            return call_llm(
+                [{"role": "system", "content": system},
+                 {"role": "user", "content": user}],
+                model=model,
+            )
+        except Exception:
+            return ""

@@ -24,7 +24,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
-from .event_schema import EventSchema, EventObject
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .event_schema import EventSchema, EventObject
 
 
 class VerificationError(Exception):
@@ -202,7 +205,7 @@ class VerificationAgent:
         if not isinstance(result, (list, tuple)):
             result = [result]
         # Filter out raw class objects (model occasionally outputs the class itself)
-        instances = [r for r in result if not isinstance(r, type)]
+        instances = [r for r in result if not isinstance(r, type) and hasattr(r, "__dict__")]
         if not instances:
             errors.append("[T3-StructuralError] eval() produced no event instances.")
             raise VerificationError(errors)
@@ -225,6 +228,8 @@ class VerificationAgent:
         # T1 (args): argument spans must appear in text ----------------------
         if self.check_args_in_text:
             for inst in instances:
+                if not hasattr(inst, "__dict__"):
+                    continue
                 for attr, val in vars(inst).items():
                     if attr == "mention":
                         continue

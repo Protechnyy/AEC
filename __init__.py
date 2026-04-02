@@ -28,7 +28,6 @@ from .planning_agent import PlanningAgent, Hypothesis
 from .retrieval_agent import RetrievalAgent
 from .coding_agent import CodingAgent
 from .verification_agent import VerificationAgent, VerificationError
-from .ontology import OntologyManager
 
 __all__ = [
     "PlanningAgent",
@@ -37,5 +36,4 @@ __all__ = [
     "CodingAgent",
     "VerificationAgent",
     "VerificationError",
-    "OntologyManager",
 ]

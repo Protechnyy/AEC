@@ -762,6 +762,10 @@ class Discovervulnerability(VulnerabilityRelatedEvent):
     def __repr__(self):
         return f"Discovervulnerability(mention=\"{self.mention}\", capabilities={self.capabilities}, cve={self.cve}, discoverer={self.discoverer}, supported_platform={self.supported_platform}, time={self.time}, vulnerability={self.vulnerability}, vulnerable_system={self.vulnerable_system}, vulnerable_system_owner={self.vulnerable_system_owner}, vulnerable_system_version={self.vulnerable_system_version})"
 
+# Aliases: casie_definitions_new.py uses CamelCase (PatchVulnerability, DiscoverVulnerability)
+# while this file defines them as Patchvulnerability, Discovervulnerability.
+PatchVulnerability = Patchvulnerability
+DiscoverVulnerability = Discovervulnerability
 
 @dataclass
 class Broadcast(ContactEvent):

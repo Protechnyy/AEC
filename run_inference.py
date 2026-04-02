@@ -67,6 +67,7 @@ import argparse
 import importlib
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -81,7 +82,9 @@ _parent = _here.parent
 if str(_parent) not in sys.path:
     sys.path.insert(0, str(_parent))
 
-from AEC.llm_utils import call_llm
+from AEC.retrieval_agent import RetrievalAgent
+from AEC.planning_agent import PlanningAgent
+from AEC.coding_agent import CodingAgent
 from AEC.verification_agent import VerificationAgent, VerificationError
 
 # ── paths ──────────────────────────────────────────────────────────────────
@@ -89,6 +92,12 @@ TEXTEE_DIR = _here / "data" / "raw" / "TextEE"
 SCHEMA_DEF_DIR = _here / "utils" / "code_schema_generation" / "python_event_defs"
 INIT_PROMPTS_DIR = _here / "utils" / "code_schema_generation" / "init_prompts"
 OUTPUT_DIR = _here / "outputs"
+
+# ── dataset → default sample size (paper §4.1) ──────────────────────────────
+# "For CASIE, due to its smaller size, we sample 50 test instances."
+DATASET_SAMPLE_SIZE: Dict[str, int] = {
+    "casie": 50,
+}
 
 # ── dataset → task type mapping (from utils/code_prompts/utils.py) ─────────
 DATASET_TASK = {
@@ -128,36 +137,6 @@ SCHEMA_SPLITTERS = {
     "mee":        "_",
     "m2e2":       ":",
     "geneva":     "None",
-}
-
-TASK_HEADERS = {
-    "e2e": (
-        "# This is an event extraction task where the goal is to extract structured events "
-        "from the text. A structured event contains an event trigger word, an event type, "
-        "the arguments participating in the event, and their roles in the event. For each "
-        "different event type, please output the extracted information from the text into "
-        "python-style dictionaries where the first key will be 'mention' with the value of "
-        "the event trigger. Next, please output the arguments and their roles following the "
-        "same format. The event type definitions and their argument roles are defined next."
-    ),
-    "ed": (
-        "# This is an event detection task where the goal is to identify event triggers and "
-        "their types in the text. For each event, please output the extracted information "
-        "into python-style dictionaries where the key is 'mention' with the value of the "
-        "event trigger. The event type definitions are defined next."
-    ),
-    "eae": (
-        "# This is an event argument extraction task where the goal is to extract the "
-        "arguments of a given event trigger in the text. The event trigger and its type "
-        "are provided. Please output the extracted arguments and their roles into python-"
-        "style dictionaries. The event type definitions and their argument roles are defined next."
-    ),
-}
-
-TASK_FOOTERS = {
-    "e2e":  "# The list called result should contain the instances for the following events according to the guidelines above:\nresult = \n",
-    "ed":   "# The list called result should contain the instances for the following events according to the guidelines above:\nresult = \n",
-    "eae":  "# The list called result contains the instances for the following events according to the guidelines above\n# 1. \"{trigger}\" triggers a {event_name} event.\n\nresult = \n",
 }
 
 
@@ -210,12 +189,24 @@ def load_schema_definitions(dataset_name: str) -> Dict[str, str]:
         block = block.strip()
         if not block:
             continue
+        # Normalize hyphenated field names to underscores so the LLM sees
+        # valid Python identifiers (e.g. "issues-addressed" → "issues_addressed").
+        normalized_lines = []
         for line in block.splitlines():
             if line.startswith("class "):
-                # e.g. "class Attack(ConflictEvent):" → key = "Attack"
                 cls_name = line.split("(")[0].replace("class", "").strip().rstrip(":")
-                schemas[cls_name] = block
-                break
+                normalized_lines.append(line)
+            elif ":" in line and not line.strip().startswith(("#", "@", "def")):
+                # Field definition line — replace hyphens with underscores
+                # in the field name portion (before the colon).
+                field_part, rest = line.split(":", 1)
+                field_part = field_part.replace("-", "_")
+                normalized_lines.append(f"{field_part}:{rest}")
+            else:
+                normalized_lines.append(line)
+        block = "\n".join(normalized_lines)
+        if cls_name:
+            schemas[cls_name] = block
     return schemas
 
 
@@ -261,7 +252,7 @@ def load_schema_roles(dataset_name: str) -> Dict[str, List[str]]:
         elif s.startswith("mention"):
             pass  # skip trigger field; handled separately
         elif ":" in s and current and not s.startswith(("#", "@", "def")):
-            role = s.split(":")[0].strip()
+            role = s.split(":")[0].strip().replace("-", "_")
             if role:
                 roles.append(role)
         elif s == "" and current:
@@ -293,10 +284,12 @@ def build_gold_label(
         trigger = em.get("trigger", {})
         mention = trigger.get("text", "") if isinstance(trigger, dict) else str(trigger)
 
-        # Collect gold argument spans grouped by (lowercased) role name
+        # Collect gold argument spans grouped by (lowercased) role name.
+        # Replace hyphens with underscores so the label is valid Python
+        # (e.g. "issues-addressed" → "issues_addressed").
         arg_gold: Dict[str, List[str]] = {}
         for arg in em.get("arguments", []):
-            role = arg.get("role", "").lower()
+            role = arg.get("role", "").lower().replace("-", "_")
             span = arg.get("text", "")
             if role and span:
                 arg_gold.setdefault(role, []).append(span)
@@ -314,136 +307,8 @@ def build_gold_label(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# AEC Four-Agent Pipeline
+# AEC Four-Agent Pipeline (Algorithm 1)
 # ══════════════════════════════════════════════════════════════════════════════
-
-def run_retrieval_agent(schema_def: str, k: int, model: str) -> str:
-    """Agent 1 — Generate k exemplar sentences for the schema."""
-    system = "You are a helpful example generator for event extraction."
-    user = (
-        f"Given the following event type definition:\n\n{schema_def}\n\n"
-        f"Generate {k} fluent English sentences. Each sentence must:\n"
-        f"1. Contain a clear trigger word or phrase for this event type.\n"
-        f"2. Mention entities filling as many argument roles as possible.\n"
-        f"3. Be realistic and varied.\n\n"
-        f"Output exactly one sentence per line, no numbering."
-    )
-    try:
-        return call_llm(
-            [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            model=model,
-        )
-    except Exception:
-        return ""
-
-
-def run_planning_agent(
-    text: str,
-    schema_def: str,
-    exemplars: str,
-    task_type: str,
-    k: int,
-    model: str,
-) -> List[Dict[str, Any]]:
-    """Agent 2 — Produce ranked trigger-type hypotheses.
-
-    Returns a list of dicts sorted by confidence (descending), each with
-    keys: ``trigger``, ``event_type``, ``confidence``, ``rationale``.
-    """
-    system = (
-        "You are an assistant for event extraction. "
-        "Given a piece of text and an event type definition (as a Python dataclass), "
-        "produce a JSON array of trigger-hypothesis objects.  "
-        "Each object must have keys: 'trigger' (exact span from text), "
-        "'event_type' (class name), 'confidence' (0-1 float), 'rationale' (string)."
-    )
-    exemplar_block = ""
-    if exemplars:
-        exemplar_block = f"\nExample sentences for context:\n{exemplars}\n"
-
-    user = (
-        f"Event definition:\n{schema_def}\n"
-        f"{exemplar_block}\n"
-        f"Text:\n{text}\n\n"
-        f"Identify up to {k} candidate trigger spans. "
-        f"Output only a JSON array, no explanation."
-    )
-    try:
-        raw = call_llm(
-            [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            model=model,
-        )
-        # Extract JSON array from the response
-        m = re.search(r"\[.*\]", raw, re.DOTALL)
-        data = json.loads(m.group(0)) if m else []
-        if isinstance(data, list):
-            data.sort(key=lambda x: float(x.get("confidence", 0)), reverse=True)
-            return data[:k]
-    except Exception:
-        pass
-    # Fallback: use the event type name as a heuristic trigger
-    return [{"trigger": text.split()[0], "event_type": "", "confidence": 0.5, "rationale": "fallback"}]
-
-
-def run_coding_agent(
-    hypothesis: Dict[str, Any],
-    schema_def: str,
-    text: str,
-    task_type: str,
-    exemplars: str,
-    patch_feedback: Optional[str],
-    model: str,
-) -> str:
-    """Agent 3 — Generate Python instantiation code for the event."""
-    header = TASK_HEADERS[task_type]
-    footer = TASK_FOOTERS[task_type]
-
-    exemplar_block = ""
-    if exemplars:
-        exemplar_block = (
-            "# Exemplar sentences:\n"
-            + "\n".join(f"# {l}" for l in exemplars.splitlines() if l.strip())
-            + "\n\n"
-        )
-
-    trigger = hypothesis.get("trigger", "")
-    event_type = hypothesis.get("event_type", "")
-
-    # For EAE, fill in the trigger/event_name placeholders
-    footer_filled = footer.format(trigger=trigger, event_name=event_type) if "{trigger}" in footer else footer
-
-    user_prompt = (
-        f"{exemplar_block}"
-        f"{header}\n\n"
-        f"{schema_def}\n\n"
-        f"# This is the text to analyze\n"
-        f'text = "{text}"\n\n'
-        f'# Hint: trigger word is "{trigger}"\n'
-        f"{footer_filled}"
-    )
-
-    system_prompt = (
-        "You are a coding agent for event extraction. "
-        "Complete the Python assignment `result = ` with a list containing "
-        "exactly one instantiation of the event class defined above. "
-        "Extract argument spans verbatim from the text; use [] for absent roles. "
-        "Output ONLY the Python list expression (e.g. [ClassName(mention=..., role=[...])]), "
-        "nothing else — no markdown, no explanation."
-    )
-    if patch_feedback:
-        system_prompt += (
-            f"\n\nThe previous attempt failed. Fix this error:\n{patch_feedback}"
-        )
-
-    raw = call_llm(
-        [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-        model=model,
-    )
-    # Strip code fences
-    raw = re.sub(r"^```(?:python)?\s*", "", raw.strip(), flags=re.IGNORECASE)
-    raw = re.sub(r"\s*```$", "", raw.strip())
-    return raw.strip()
-
 
 def run_aec_pipeline(
     text: str,
@@ -454,6 +319,9 @@ def run_aec_pipeline(
     model: str,
     k: int = 3,
     t: int = 3,
+    retriever: Optional[RetrievalAgent] = None,
+    planner: Optional[PlanningAgent] = None,
+    coder: Optional[CodingAgent] = None,
     verifier: Optional[VerificationAgent] = None,
 ) -> Tuple[str, bool]:
     """Run the full four-agent AEC pipeline (Algorithm 1).
@@ -464,18 +332,19 @@ def run_aec_pipeline(
         ``prediction_str`` is the final code string (may be ``"[]"`` if all
         hypotheses fail).  ``success`` is True if verification passed.
     """
-    if verifier is None:
-        verifier = VerificationAgent()
+    retriever = retriever or RetrievalAgent()
+    planner = planner or PlanningAgent()
+    coder = coder or CodingAgent()
+    verifier = verifier or VerificationAgent()
 
-    # Step 1 — Retrieval
-    exemplars = run_retrieval_agent(schema_def, k=k, model=model)
+    # Step 1 — Retrieval Agent
+    exemplars = retriever.retrieve(schema_def, k=k, model=model)
 
-    # Step 2 — Planning
-    hypotheses = run_planning_agent(
+    # Step 2 — Planning Agent
+    hypotheses = planner.generate_hypotheses(
         text=text,
-        schema_def=schema_def,
+        schema_definition=schema_def,
         exemplars=exemplars,
-        task_type=task_type,
         k=k,
         model=model,
     )
@@ -484,17 +353,17 @@ def run_aec_pipeline(
     for hyp in hypotheses:
         patch_feedback: Optional[str] = None
         for attempt in range(1, t + 1):
-            # Coding agent
-            code_str = run_coding_agent(
+            # Coding Agent
+            code_str = coder.generate_code(
                 hypothesis=hyp,
-                schema_def=schema_def,
+                schema_definition=schema_def,
                 text=text,
                 task_type=task_type,
                 exemplars=exemplars,
                 patch_feedback=patch_feedback,
                 model=model,
             )
-            # Verification agent
+            # Verification Agent
             try:
                 verifier.verify_code(code_str, text, class_globals)
                 return code_str, True          # success
@@ -634,12 +503,32 @@ def main() -> None:
     raw_text = split_file.read_text(encoding="utf-8")
     lines = [l for l in raw_text.splitlines() if l.strip()]
     try:
+        # Try JSONL (one JSON object per line)
         raw_data = [json.loads(l) for l in lines]
     except json.JSONDecodeError:
-        raw_data = json.loads(raw_text)  # fallback: JSON array format
+        try:
+            # Try single JSON array
+            raw_data = json.loads(raw_text)
+        except json.JSONDecodeError:
+            # Concatenated pretty-printed JSON objects (TextEE default format):
+            # parse by streaming through the text with JSONDecoder.
+            raw_data = []
+            decoder = json.JSONDecoder()
+            text_stripped = raw_text.strip()
+            pos = 0
+            while pos < len(text_stripped):
+                obj, end = decoder.raw_decode(text_stripped, pos)
+                raw_data.append(obj)
+                # Skip whitespace between objects
+                pos = end
+                while pos < len(text_stripped) and text_stripped[pos] in ' \t\r\n':
+                    pos += 1
 
-    if args.max_samples:
-        raw_data = raw_data[: args.max_samples]
+    # Apply dataset-specific sample size (paper §4.1) or user override
+    sample_size = args.max_samples or DATASET_SAMPLE_SIZE.get(args.dataset)
+    if sample_size and sample_size < len(raw_data):
+        rng = random.Random(42)
+        raw_data = rng.sample(raw_data, sample_size)
     print(f"Loaded {len(raw_data)} samples from {split_file}")
 
     # ── load schemas and event class definitions ─────────────────────────────
@@ -657,6 +546,10 @@ def main() -> None:
         print(f"ERROR: {e}")
         sys.exit(1)
 
+    # ── instantiate agents ────────────────────────────────────────────────────
+    retriever = RetrievalAgent()
+    planner = PlanningAgent()
+    coder = CodingAgent()
     verifier = VerificationAgent(
         check_trigger_in_text=True,
         check_args_in_text=True,
@@ -713,6 +606,9 @@ def main() -> None:
                 model=args.model,
                 k=args.k,
                 t=args.t,
+                retriever=retriever,
+                planner=planner,
+                coder=coder,
                 verifier=verifier,
             )
             if success:
