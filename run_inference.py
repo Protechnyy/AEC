@@ -307,6 +307,119 @@ def build_gold_label(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Post-processing: normalise predicted argument spans
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Leading tokens that gold annotations typically do not include.
+_STRIP_PREFIXES = (
+    "the ", "a ", "an ",                       # articles
+    "to the ", "to ", "from the ", "from ",     # prepositions
+    "in the ", "in ", "at the ", "at ",
+    "on the ", "on ", "of the ", "of ",
+    "for the ", "for ", "by the ", "by ",
+    "with the ", "with ", "near the ", "near ",
+    "into the ", "into ", "about the ", "about ",
+    "against the ", "against ",
+    "over the ", "over ",
+)
+
+
+def _shrink_span(span: str, source_text: str) -> str:
+    """Try to shorten *span* to a minimal substring that still appears in *source_text*.
+
+    1. Strip leading articles / prepositions (longest-prefix-first).
+    2. Strip leading numeric quantifiers (e.g. "10 demonstrators" → "demonstrators").
+    3. Try shortest left-prefix that exists in text.
+    4. Try shortest right-suffix that exists in text.
+    5. Pick the shorter of pass-3 / pass-4 results.
+    """
+    if not span or not source_text:
+        return span
+
+    best = span
+    lower = span.lower()
+
+    # Pass 1 — strip leading function words
+    for prefix in sorted(_STRIP_PREFIXES, key=len, reverse=True):
+        if lower.startswith(prefix):
+            candidate = span[len(prefix):]
+            if candidate and candidate in source_text:
+                best = candidate
+                break
+
+    # Pass 2 — strip leading numeric quantifiers  ("10 demonstrators" → "demonstrators")
+    m = re.match(r"^(?:at least |more than |up to |nearly |some |several )?[\d,.]+ +", best, re.IGNORECASE)
+    if m:
+        candidate = best[m.end():]
+        if candidate and candidate in source_text:
+            best = candidate
+
+    # Pass 3 + 4 — try shortest prefix AND shortest suffix, keep the shorter
+    words = best.split()
+    if len(words) > 1:
+        candidates = []
+        # Left-to-right: shortest prefix
+        for length in range(1, len(words)):
+            c = " ".join(words[:length])
+            if c in source_text and len(c) < len(best):
+                candidates.append(c)
+                break
+        # Right-to-left: shortest suffix (e.g. "vile Americans" → "Americans")
+        for length in range(1, len(words)):
+            c = " ".join(words[len(words) - length:])
+            if c in source_text and len(c) < len(best):
+                candidates.append(c)
+                break
+        if candidates:
+            best = min(candidates, key=len)
+
+    return best
+
+
+def postprocess_prediction(code_str: str, source_text: str, class_globals: dict) -> str:
+    """Normalise argument spans in a prediction code string.
+
+    Parses the code with ``eval()``, shortens every argument span, and
+    re-serialises the result.  Falls back to the original string on any error.
+    """
+    if not code_str or code_str == "[]":
+        return code_str
+    try:
+        result = eval(code_str, {"__builtins__": {}}, class_globals)
+        if not isinstance(result, (list, tuple)):
+            return code_str
+        result = [r for r in result if not isinstance(r, type) and hasattr(r, "__dict__")]
+        if not result:
+            return code_str
+    except Exception:
+        return code_str
+
+    parts: List[str] = []
+    for inst in result:
+        cls_name = inst.__class__.__name__
+        fields: List[str] = []
+        for attr, val in vars(inst).items():
+            if attr == "mention":
+                # Shrink trigger too
+                new_val = _shrink_span(val, source_text) if isinstance(val, str) else val
+                fields.append(f'mention="{new_val}"')
+            elif isinstance(val, list):
+                new_list = []
+                for v in val:
+                    if isinstance(v, str) and v:
+                        new_list.append(_shrink_span(v, source_text))
+                    elif isinstance(v, str):
+                        continue  # drop empty strings
+                    else:
+                        new_list.append(v)
+                fields.append(f"{attr}={new_list!r}")
+            else:
+                fields.append(f"{attr}={val!r}")
+        parts.append(f"{cls_name}({', '.join(fields)})")
+    return "[" + ", ".join(parts) + "]"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # AEC Four-Agent Pipeline (Algorithm 1)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -366,7 +479,8 @@ def run_aec_pipeline(
             # Verification Agent
             try:
                 verifier.verify_code(code_str, text, class_globals)
-                return code_str, True          # success
+                # Post-process: shrink argument spans to minimal substrings
+                return postprocess_prediction(code_str, text, class_globals), True
             except VerificationError as ve:
                 patch_feedback = str(ve)       # feed diagnostic ε to next attempt
         # All t attempts failed for this hypothesis → try next

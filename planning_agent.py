@@ -66,9 +66,16 @@ class PlanningAgent:
         system = (
             "You are an assistant for event extraction. "
             "Given a piece of text and an event type definition (as a Python dataclass), "
-            "produce a JSON array of trigger-hypothesis objects.  "
+            "produce a JSON array of trigger-hypothesis objects. "
             "Each object must have keys: 'trigger' (exact span from text), "
-            "'event_type' (class name), 'confidence' (0-1 float), 'rationale' (string)."
+            "'event_type' (class name), 'confidence' (0-1 float), 'rationale' (string).\n"
+            "IMPORTANT: The 'trigger' MUST be the EXACT minimal word(s) copied verbatim "
+            "from the text that best indicate the event is occurring. Typically this is "
+            "a single verb or noun (e.g. 'attacked', 'released', 'patched'). "
+            "Do NOT paraphrase, do NOT include surrounding context, do NOT use multi-word "
+            "phrases when a single word suffices. "
+            "If MULTIPLE events of this type exist in the text, include a separate "
+            "hypothesis for EACH distinct trigger."
         )
         exemplar_block = ""
         if exemplars:
@@ -78,7 +85,8 @@ class PlanningAgent:
             f"Event definition:\n{schema_definition}\n"
             f"{exemplar_block}\n"
             f"Text:\n{text}\n\n"
-            f"Identify up to {k} candidate trigger spans. "
+            f"Identify ALL events of this type in the text (up to {k} candidates). "
+            f"Each trigger must be the exact minimal word from the text. "
             f"Output only a JSON array, no explanation."
         )
         try:
