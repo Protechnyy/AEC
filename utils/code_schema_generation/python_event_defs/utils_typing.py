@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import importlib
 import inspect
 import logging
@@ -8,7 +9,83 @@ import re
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass as org_dataclass
-from typing import Any, Dict, List, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, List, Tuple, Type, TypeVar, Union, get_args, get_origin
+
+
+def _validate_runtime_field_type(name: str, value: Any, annotation: Any) -> None:
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+
+    if annotation is Any or annotation is inspect._empty:
+        return
+
+    if origin is Union:
+        non_none = [arg for arg in args if arg is not type(None)]
+        if value is None:
+            return
+        if not non_none:
+            return
+        last_error = None
+        for arg in non_none:
+            try:
+                _validate_runtime_field_type(name, value, arg)
+                return
+            except TypeError as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        return
+
+    if origin in (list, List) or str(annotation) in {"typing.List", "List"}:
+        if not isinstance(value, list):
+            raise TypeError(
+                f"Field '{name}' must be a list, got {type(value).__name__}."
+            )
+        elem_type = args[0] if args else str
+        for idx, item in enumerate(value):
+            _validate_runtime_field_type(f"{name}[{idx}]", item, elem_type)
+        return
+
+    if annotation in (str, Name, Value, String):
+        if not isinstance(value, str):
+            raise TypeError(
+                f"Field '{name}' must be a string, got {type(value).__name__}."
+            )
+        return
+
+    if isinstance(annotation, type):
+        if not isinstance(value, annotation):
+            raise TypeError(
+                f"Field '{name}' must be of type {annotation.__name__}, "
+                f"got {type(value).__name__}."
+            )
+        return
+
+
+def _validate_runtime_signature(instance: Any, signature: inspect.Signature) -> None:
+    for name, param in signature.parameters.items():
+        if name == "self":
+            continue
+        if not hasattr(instance, name):
+            continue
+        _validate_runtime_field_type(name, getattr(instance, name), param.annotation)
+
+
+def _wrap_runtime_validated_init(cls):
+    original_init = cls.__dict__.get("__init__")
+    if original_init is None or getattr(original_init, "_aec_wrapped_init", False):
+        return cls
+
+    signature = inspect.signature(original_init)
+
+    @functools.wraps(original_init)
+    def validated_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        _validate_runtime_signature(self, signature)
+
+    validated_init._aec_wrapped_init = True
+    cls.__init__ = validated_init
+    return cls
 
 
 def dataclass(
@@ -22,15 +99,21 @@ def dataclass(
     unsafe_hash=False,
     frozen=False,
 ):
-    return org_dataclass(
-        cls,
-        init=init,
-        repr=repr,
-        eq=eq,
-        order=order,
-        unsafe_hash=unsafe_hash,
-        frozen=frozen,
-    )
+    def decorate(_cls):
+        wrapped = org_dataclass(
+            _cls,
+            init=init,
+            repr=repr,
+            eq=eq,
+            order=order,
+            unsafe_hash=unsafe_hash,
+            frozen=frozen,
+        )
+        return _wrap_runtime_validated_init(wrapped)
+
+    if cls is None:
+        return decorate
+    return decorate(cls)
 
 
 def cast_to(obj: Any, dtype: Type) -> Any:
@@ -239,6 +322,10 @@ class Event:
     """A general class to represent events."""
 
     mention: str
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        _wrap_runtime_validated_init(cls)
 
     def __post_init__(self: Event) -> None:
         self._allow_partial_match: bool = False

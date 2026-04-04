@@ -19,6 +19,23 @@ from dataclasses import dataclass
 from .llm_utils import call_llm
 
 
+def _extract_event_type_and_roles(schema_definition: str) -> tuple[str, list[str]]:
+    event_type = ""
+    roles: list[str] = []
+
+    for line in schema_definition.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("class ") and "(" in stripped:
+            event_type = stripped.split()[1].split("(")[0].strip(":")
+            continue
+        if ":" in stripped and not stripped.startswith("@") and not stripped.startswith("class "):
+            field = stripped.split(":", 1)[0].strip()
+            if field and field != "mention":
+                roles.append(field)
+
+    return event_type, roles
+
+
 @dataclass
 class RetrievalAgent:
     """Retrieval agent that generates exemplar sentences via an LLM."""
@@ -45,14 +62,18 @@ class RetrievalAgent:
         str
             A newline-separated string of *k* exemplar sentences.
         """
+        event_type, roles = _extract_event_type_and_roles(schema_definition)
+        roles_text = ", ".join(roles)
+
         system = "You are a helpful example generator for event extraction."
         user = (
-            f"Given the following event type definition:\n\n{schema_definition}\n\n"
-            f"Generate {k} fluent English sentences. Each sentence must:\n"
-            f"1. Contain a clear trigger word or phrase for this event type.\n"
-            f"2. Mention entities filling as many argument roles as possible.\n"
-            f"3. Be realistic and varied.\n\n"
-            f"Output exactly one sentence per line, no numbering."
+            f"Event type: {event_type or 'UnknownEvent'}\n"
+            f"Roles: {roles_text}\n\n"
+            f"Write {k} English sentence"
+            f"{'' if k == 1 else 's'} that contain"
+            f"{'' if k == 1 else ''} a clear mention of the {event_type or 'event'} trigger "
+            f"and populate{'s' if k == 1 else ''} all roles.\n"
+            f"Output exactly one sentence per line."
         )
         try:
             return call_llm(

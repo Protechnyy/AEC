@@ -7,6 +7,8 @@
 #   bash scripts/run_experiments.sh ace05-en                       # single dataset
 #   bash scripts/run_experiments.sh ace05-en casie                 # multiple
 #   MODEL=Qwen/Qwen2.5-7B-Instruct bash scripts/run_experiments.sh
+#   RUN_NAME=trial1 bash scripts/run_experiments.sh casie          # custom output name
+#   RESUME=1 bash scripts/run_experiments.sh ace05-en              # resume an existing run
 # ============================================================================
 # Prerequisites:
 #   1. vLLM server is running (see scripts/start_vllm.sh)
@@ -22,6 +24,8 @@ K="${K:-3}"            # number of planning hypotheses
 T="${T:-3}"            # max patch attempts per hypothesis
 DELAY="${DELAY:-0.5}"  # seconds between API calls
 SPLIT="${SPLIT:-test}"
+RUN_NAME="${RUN_NAME:-}"
+RESUME="${RESUME:-0}"
 
 # Project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -69,6 +73,10 @@ echo "  Server:   ${BASE_URL}"
 echo "  Datasets: ${DATASETS[*]}"
 echo "  Split:    ${SPLIT}"
 echo "  k=${K}, t=${T}, delay=${DELAY}s"
+if [ -n "${RUN_NAME}" ]; then
+    echo "  Run name: ${RUN_NAME}"
+fi
+echo "  Resume:   ${RESUME}"
 echo "============================================"
 echo ""
 
@@ -76,6 +84,7 @@ cd "${PROJECT_DIR}"
 
 TOTAL=${#DATASETS[@]}
 CURRENT=0
+MODEL_TAG=$(echo "${MODEL}" | sed 's/[^a-zA-Z0-9_-]/_/g')
 
 for DATASET in "${DATASETS[@]}"; do
     CURRENT=$((CURRENT + 1))
@@ -95,15 +104,27 @@ for DATASET in "${DATASETS[@]}"; do
     fi
 
     echo "[INFO] Running inference on ${DATASET} ..."
-    OPENAI_API_KEY=EMPTY python run_inference.py \
-        --dataset "${DATASET}" \
-        --split "${SPLIT}" \
-        --model "${MODEL}" \
-        --base_url "${BASE_URL}" \
-        --k "${K}" \
-        --t "${T}" \
-        --delay "${DELAY}" \
-        --resume
+    OUTPUT_FILE="outputs/${DATASET}_${MODEL_TAG}_predictions.json"
+    if [ -n "${RUN_NAME}" ]; then
+        OUTPUT_FILE="outputs/${DATASET}_${MODEL_TAG}_${RUN_NAME}_predictions.json"
+    fi
+
+    CMD=(
+        python run_inference.py
+        --dataset "${DATASET}"
+        --split "${SPLIT}"
+        --model "${MODEL}"
+        --base_url "${BASE_URL}"
+        --k "${K}"
+        --t "${T}"
+        --delay "${DELAY}"
+        --output "${OUTPUT_FILE}"
+    )
+    if [ "${RESUME}" = "1" ] || [ "${RESUME}" = "true" ] || [ "${RESUME}" = "TRUE" ]; then
+        CMD+=(--resume)
+    fi
+
+    OPENAI_API_KEY=EMPTY "${CMD[@]}"
 
     echo "[INFO] ${DATASET} done."
 done
@@ -117,9 +138,14 @@ echo "  Results saved in: ${PROJECT_DIR}/outputs/"
 echo ""
 echo "  Output files:"
 for DATASET in "${DATASETS[@]}"; do
-    MODEL_TAG=$(echo "${MODEL}" | sed 's/[^a-zA-Z0-9_-]/_/g')
     PRED_FILE="outputs/${DATASET}_${MODEL_TAG}_predictions.json"
+    if [ -n "${RUN_NAME}" ]; then
+        PRED_FILE="outputs/${DATASET}_${MODEL_TAG}_${RUN_NAME}_predictions.json"
+    fi
     SCORE_FILE="outputs/${DATASET}_${MODEL_TAG}_predictions_scores.json"
+    if [ -n "${RUN_NAME}" ]; then
+        SCORE_FILE="outputs/${DATASET}_${MODEL_TAG}_${RUN_NAME}_predictions_scores.json"
+    fi
     if [ -f "${PRED_FILE}" ]; then
         echo "    ${PRED_FILE}"
         if [ -f "${SCORE_FILE}" ]; then
