@@ -21,12 +21,8 @@ only text grounding is enforced.
 
 from __future__ import annotations
 
-import ast
-import json
 from dataclasses import dataclass
 from typing import List
-
-from .llm_utils import call_llm
 
 from typing import TYPE_CHECKING
 
@@ -71,54 +67,6 @@ class VerificationAgent:
     check_trigger_in_text: bool = True
     check_args_in_text: bool = True
     check_schema_roles: bool = True
-    use_llm_semantic_check: bool = False
-
-    @staticmethod
-    def _event_to_candidate_dict(inst: object) -> dict:
-        arguments = {
-            attr: val
-            for attr, val in vars(inst).items()
-            if attr != "mention" and not attr.startswith("_")
-        }
-        return {
-            "event_type": type(inst).__name__,
-            "trigger": getattr(inst, "mention", None),
-            "arguments": arguments,
-        }
-
-    def _llm_verify(
-        self,
-        text: str,
-        schema_definition: str,
-        candidate_obj: dict,
-        model: str,
-    ) -> List[str]:
-        system_prompt = (
-            "You are a verifier for event extraction. Examine the following event object "
-            "in the context of the original text and definition. Identify any semantic, "
-            "type, or structural errors."
-        )
-        user_prompt = (
-            f'Text: "{text}"\n'
-            f"Event definition:\n{schema_definition}\n\n"
-            "Candidate event object:\n"
-            f"{json.dumps(candidate_obj, ensure_ascii=False, indent=2)}\n\n"
-            "Return a list of error messages, or an empty list if the event is valid."
-        )
-        raw = call_llm(
-            [{"role": "system", "content": system_prompt},
-             {"role": "user", "content": user_prompt}],
-            model=model,
-        ).strip()
-
-        for parser in (json.loads, ast.literal_eval):
-            try:
-                parsed = parser(raw)
-                if isinstance(parsed, list):
-                    return [str(x) for x in parsed if str(x).strip()]
-            except Exception:
-                continue
-        return [raw] if raw and raw != "[]" else []
 
     def verify(self, event_obj: EventObject, schema: EventSchema, text: str) -> None:
         """Verify *event_obj* against *schema* and *text*.
@@ -196,9 +144,7 @@ class VerificationAgent:
         self,
         code_string: str,
         text: str,
-        schema_definition: str,
         class_globals: dict,
-        model: str,
     ) -> None:
         """Verify a raw Python instantiation string by executing it.
 
@@ -294,22 +240,6 @@ class VerificationAgent:
                                     f"[T1-ArgHallucination] Argument span '{span}' "
                                     f"(role '{attr}') not found in input text."
                                 )
-
-        if self.use_llm_semantic_check:
-            for inst in instances:
-                candidate = self._event_to_candidate_dict(inst)
-                try:
-                    llm_errors = self._llm_verify(
-                        text=text,
-                        schema_definition=schema_definition,
-                        candidate_obj=candidate,
-                        model=model,
-                    )
-                except Exception as exc:
-                    llm_errors = [f"[Verifier-LLMError] {type(exc).__name__}: {exc}"]
-                for err in llm_errors:
-                    if err:
-                        errors.append(f"[Verifier-LLM] {err}")
 
         if errors:
             raise VerificationError(errors)

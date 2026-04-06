@@ -124,6 +124,7 @@ class CodingAgent:
         trigger = hypothesis.trigger
         event_type = hypothesis.event_type
 
+        # For EAE, fill in the trigger/event_name placeholders
         footer_filled = (
             footer.format(trigger=trigger, event_name=event_type)
             if "{trigger}" in footer
@@ -153,18 +154,9 @@ class CodingAgent:
             "(to/from/in/at/of/by/with), or surrounding context. "
             "For example, use 'United States' not 'the United States', "
             "use 'Red Sea' not 'to the Red Sea'.\n"
-            "- Only include arguments that are EXPLICITLY stated in the text for that role. "
-            "Do NOT infer missing participants from world knowledge, discourse context, or "
-            "weak clues. If a role is uncertain, output [].\n"
-            "- Prefer the head noun / named entity itself, not possessors or descriptive "
-            "modifiers. For example, prefer 'mother' over \"baby's mother\" when both are "
-            "supported by the text, and prefer 'Republican Guards' over "
-            "\"Saddam's Iraqi Republican Guards\" when the shorter span is present.\n"
-            "- Do not use a long clause as an argument span. Copy only the minimal noun "
-            "phrase that fills the role.\n"
             "- Use [] for absent roles.\n"
             "Output ONLY the Python list expression (e.g. [ClassName(mention=..., role=[...])]), "
-            "nothing else - no markdown, no explanation."
+            "nothing else — no markdown, no explanation."
         )
         if patch_feedback:
             system_prompt += (

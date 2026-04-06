@@ -329,12 +329,9 @@ def _shrink_span(span: str, source_text: str) -> str:
 
     1. Strip leading articles / prepositions (longest-prefix-first).
     2. Strip leading numeric quantifiers (e.g. "10 demonstrators" → "demonstrators").
-    3. Strip a leading possessive owner when the head still appears in text.
-    4. Try a conservative shortest-suffix search for multiword noun phrases.
-
-    Keep the remaining phrase intact. Earlier heuristic prefix/suffix search
-    was too aggressive and often collapsed semantically complete spans such as
-    "United States" → "United" or "Red Sea" → "Red", which hurts AI/AC.
+    3. Try shortest left-prefix that exists in text.
+    4. Try shortest right-suffix that exists in text.
+    5. Pick the shorter of pass-3 / pass-4 results.
     """
     if not span or not source_text:
         return span
@@ -357,28 +354,24 @@ def _shrink_span(span: str, source_text: str) -> str:
         if candidate and candidate in source_text:
             best = candidate
 
-    # Pass 3 — strip a leading possessive owner  ("baby's mother" → "mother")
-    m = re.match(r"^[^ ]+'s +(.+)$", best)
-    if m:
-        candidate = m.group(1).strip()
-        if candidate and candidate in source_text:
-            best = candidate
-
-    # Pass 4 — conservative suffix search for over-specified NPs
+    # Pass 3 + 4 — try shortest prefix AND shortest suffix, keep the shorter
     words = best.split()
     if len(words) > 1:
-        allow_single_token = bool(re.match(r"^[^ ]+'s +", span))
         candidates = []
-        for start in range(1, len(words)):
-            candidate = " ".join(words[start:]).strip()
-            if not candidate or candidate not in source_text:
-                continue
-            token_count = len(candidate.split())
-            if token_count == 1 and not allow_single_token:
-                continue
-            candidates.append(candidate)
+        # Left-to-right: shortest prefix
+        for length in range(1, len(words)):
+            c = " ".join(words[:length])
+            if c in source_text and len(c) < len(best):
+                candidates.append(c)
+                break
+        # Right-to-left: shortest suffix (e.g. "vile Americans" → "Americans")
+        for length in range(1, len(words)):
+            c = " ".join(words[len(words) - length:])
+            if c in source_text and len(c) < len(best):
+                candidates.append(c)
+                break
         if candidates:
-            best = min(candidates, key=lambda c: (len(c.split()), len(c)))
+            best = min(candidates, key=len)
 
     return best
 
@@ -426,25 +419,6 @@ def postprocess_prediction(code_str: str, source_text: str, class_globals: dict)
     return "[" + ", ".join(parts) + "]"
 
 
-def _merge_prediction_chunks(chunks: List[str]) -> str:
-    """Merge multiple list-expression prediction chunks into one deduplicated list."""
-    merged_items: List[str] = []
-    seen: set[str] = set()
-    for chunk in chunks:
-        if not chunk or chunk == "[]":
-            continue
-        inner = chunk.strip()
-        if inner.startswith("[") and inner.endswith("]"):
-            inner = inner[1:-1].strip()
-        if not inner:
-            continue
-        if inner in seen:
-            continue
-        seen.add(inner)
-        merged_items.append(inner)
-    return f"[{', '.join(merged_items)}]" if merged_items else "[]"
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # AEC Four-Agent Pipeline (Algorithm 1)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -488,8 +462,6 @@ def run_aec_pipeline(
         model=model,
     )
 
-    verified_predictions: List[str] = []
-
     # Step 3 — Dual-loop refinement (Algorithm 1)
     for hyp in hypotheses:
         patch_feedback: Optional[str] = None
@@ -506,23 +478,13 @@ def run_aec_pipeline(
             )
             # Verification Agent
             try:
-                verifier.verify_code(
-                    code_str,
-                    text,
-                    schema_def,
-                    class_globals,
-                    model,
-                )
-                normalized = postprocess_prediction(code_str, text, class_globals)
-                if normalized and normalized != "[]":
-                    verified_predictions.append(normalized)
-                break
+                verifier.verify_code(code_str, text, class_globals)
+                # Post-process: shrink argument spans to minimal substrings
+                return postprocess_prediction(code_str, text, class_globals), True
             except VerificationError as ve:
                 patch_feedback = str(ve)       # feed diagnostic ε to next attempt
         # All t attempts failed for this hypothesis → try next
 
-    if verified_predictions:
-        return _merge_prediction_chunks(verified_predictions), True
     return "[]", False
 
 
@@ -705,7 +667,7 @@ def main() -> None:
     verifier = VerificationAgent(
         check_trigger_in_text=True,
         check_args_in_text=True,
-        check_schema_roles=True,
+        check_schema_roles=False,  # role-set check done at eval time by scorer
     )
 
     # ── resume: skip already-processed samples ───────────────────────────────
