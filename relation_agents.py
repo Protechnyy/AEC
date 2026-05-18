@@ -1,32 +1,102 @@
 """
 Four-agent relation extraction framework.
 
-The agents preserve the retrieval -> planning -> coding -> verification loop
-and make the relation tuple the unit of work:
+The agents preserve the retrieval -> planning -> triple generation ->
+verification loop, but the task output is standard relation extraction:
 
-    RelationClass(arg1="entity span", arg2="entity span", evidence=[...])
+    [{"subject": "Alice", "object": "Acme Corp", "relation": "per:employee_of"}]
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
-from typing import Any, List, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Any, List, Mapping, Optional, Sequence, Tuple
 
 from .llm_utils import call_llm
 
 
+def _safe_float(value: Any, default: float = 0.5) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _strip_json_fence(raw: str) -> str:
+    raw = raw.strip()
+    raw = re.sub(r"^```(?:json|python)?\s*", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"\s*```$", "", raw)
+    return raw.strip()
+
+
+def _extract_json_array(raw: str) -> str:
+    raw = _strip_json_fence(raw)
+    start = raw.find("[")
+    if start < 0:
+        return raw
+
+    depth = 0
+    in_string = False
+    escape = False
+    for i, ch in enumerate(raw[start:], start=start):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                return raw[start : i + 1]
+    return raw[start:]
+
+
+def _relation_labels(schemas_or_labels: Sequence[Any] | Mapping[str, Any]) -> set[str]:
+    if isinstance(schemas_or_labels, Mapping):
+        return {str(key) for key in schemas_or_labels}
+    labels: set[str] = set()
+    for item in schemas_or_labels:
+        label = getattr(item, "relation_type", item)
+        labels.add(str(label))
+    return labels
+
+
+def _symmetric_labels(schemas_or_labels: Sequence[Any] | Mapping[str, Any]) -> set[str]:
+    if isinstance(schemas_or_labels, Mapping):
+        values = schemas_or_labels.values()
+    else:
+        values = schemas_or_labels
+    return {str(getattr(item, "relation_type", "")) for item in values if getattr(item, "symmetric", False)}
+
+
+def parse_triple_json(code_string: str) -> List[dict]:
+    """Parse a strict JSON list of relation triples."""
+
+    payload = _extract_json_array(code_string)
+    data = json.loads(payload)
+    if not isinstance(data, list):
+        raise ValueError("expected a JSON list")
+    return data
+
+
 @dataclass
 class RelationHypothesis:
-    """A ranked candidate relation tuple proposed by the planning agent."""
+    """A ranked candidate relation triple proposed by the planning agent."""
 
-    arg1: str
-    arg2: str
-    relation_type: str
+    subject: str
+    object: str
+    relation: str
     confidence: float
     rationale: str = ""
-    evidence: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -41,9 +111,9 @@ class RelationRetrievalAgent:
     ) -> str:
         system = "You generate concise examples for relation extraction."
         user = (
-            f"Given this executable relation definition:\n\n{schema_definition}\n\n"
+            f"Given this relation schema:\n\n{schema_definition}\n\n"
             f"Generate {k} fluent English sentences that clearly express this relation. "
-            "Each sentence must contain both argument spans and a natural lexical cue. "
+            "Each sentence must contain both subject and object spans and a natural lexical cue. "
             "Output exactly one sentence per line, no numbering."
         )
         try:
@@ -59,7 +129,7 @@ class RelationRetrievalAgent:
 
 
 class RelationPlanningAgent:
-    """Propose candidate argument pairs for one target relation type."""
+    """Propose candidate subject/object pairs for one target relation type."""
 
     def generate_hypotheses(
         self,
@@ -74,10 +144,10 @@ class RelationPlanningAgent:
         pair_block = ""
         if candidate_pairs:
             rendered = "\n".join(
-                f"- arg1={arg1!r}, arg2={arg2!r}" for arg1, arg2 in candidate_pairs
+                f"- subject={subject!r}, object={obj!r}" for subject, obj in candidate_pairs
             )
             pair_block = (
-                "\nCandidate argument pairs are provided. Use only these exact spans, "
+                "\nCandidate subject/object pairs are provided. Use only these exact spans, "
                 "and return [] if none of the pairs expresses the target relation:\n"
                 f"{rendered}\n"
             )
@@ -89,17 +159,17 @@ class RelationPlanningAgent:
         system = (
             "You are a planning agent for relation extraction. Given text and one "
             "target relation schema, produce a JSON array of candidate relation "
-            "hypotheses. Each object must contain keys: arg1, arg2, relation_type, "
-            "confidence, rationale, evidence. arg1 and arg2 must be exact spans "
-            "copied from the text. evidence is a list of exact text spans that "
-            "support the relation. Output [] when the relation is not expressed."
+            "hypotheses. Each object must contain keys: subject, object, relation, "
+            "confidence, rationale. subject and object must be exact spans copied "
+            "from the text. relation must be the target relation label. Output [] "
+            "when the relation is not expressed."
         )
         user = (
             f"Relation definition:\n{schema_definition}\n"
             f"{exemplar_block}"
             f"{pair_block}\n"
             f"Text:\n{text}\n\n"
-            f"Target relation type: {relation_type}\n"
+            f"Target relation: {relation_type}\n"
             f"Return up to {k} hypotheses as a JSON array only."
         )
         try:
@@ -119,27 +189,22 @@ class RelationPlanningAgent:
         if not isinstance(data, list):
             return hypotheses
 
-        data.sort(key=lambda x: float(x.get("confidence", 0)) if isinstance(x, dict) else 0, reverse=True)
+        data.sort(key=lambda x: _safe_float(x.get("confidence", 0)) if isinstance(x, dict) else 0, reverse=True)
         for item in data[:k]:
             if not isinstance(item, dict):
                 continue
-            arg1 = item.get("arg1") or item.get("subject") or item.get("head") or ""
-            arg2 = item.get("arg2") or item.get("object") or item.get("tail") or ""
-            if not isinstance(arg1, str) or not isinstance(arg2, str):
+            subject = item.get("subject") or item.get("arg1") or item.get("head") or ""
+            obj = item.get("object") or item.get("arg2") or item.get("tail") or ""
+            relation = item.get("relation") or item.get("relation_type") or relation_type
+            if not isinstance(subject, str) or not isinstance(obj, str):
                 continue
-            evidence = item.get("evidence") or []
-            if isinstance(evidence, str):
-                evidence = [evidence]
-            elif not isinstance(evidence, list):
-                evidence = []
             hypotheses.append(
                 RelationHypothesis(
-                    arg1=arg1,
-                    arg2=arg2,
-                    relation_type=str(item.get("relation_type") or relation_type),
-                    confidence=float(item.get("confidence", 0.5)),
+                    subject=subject,
+                    object=obj,
+                    relation=str(relation),
+                    confidence=_safe_float(item.get("confidence", 0.5)),
                     rationale=str(item.get("rationale", "")),
-                    evidence=[str(e) for e in evidence if e],
                 )
             )
         return hypotheses
@@ -151,23 +216,21 @@ class RelationPlanningAgent:
         candidate_pair: Tuple[str, str],
         model: str = "gpt-4o",
     ) -> Optional[RelationHypothesis]:
-        """Choose one relation type or Other for a given argument pair."""
+        """Choose one relation label or Other for a given subject/object pair."""
 
-        arg1, arg2 = candidate_pair
+        subject, obj = candidate_pair
         system = (
             "You are a planning agent for relation classification. Given text, "
-            "relation schemas, and one candidate argument pair, choose exactly "
-            "one relation_type from the schemas, or output Other if no listed "
-            "relation is expressed. The argument spans must be interpreted in "
-            "the given order."
+            "relation schemas, and one candidate subject/object pair, choose exactly "
+            "one relation label from the schemas, or output Other if no listed "
+            "relation is expressed. The subject/object order is fixed."
         )
         user = (
             f"Relation schemas:\n{schema_definitions}\n\n"
             f"Text:\n{text}\n\n"
-            f"Candidate pair:\narg1 = {arg1!r}\narg2 = {arg2!r}\n\n"
-            "Return only a JSON object with keys: relation_type, confidence, "
-            "rationale, evidence. relation_type must be one schema relation_type "
-            "or exactly Other. evidence must be a list of exact text spans."
+            f"Candidate pair:\nsubject = {subject!r}\nobject = {obj!r}\n\n"
+            "Return only a JSON object with keys: relation, confidence, rationale. "
+            "relation must be one schema relation label or exactly Other."
         )
         try:
             raw = call_llm(
@@ -184,25 +247,19 @@ class RelationPlanningAgent:
 
         if not isinstance(data, dict):
             return None
-        relation_type = str(data.get("relation_type", "Other"))
-        evidence = data.get("evidence") or []
-        if isinstance(evidence, str):
-            evidence = [evidence]
-        elif not isinstance(evidence, list):
-            evidence = []
+        relation = str(data.get("relation") or data.get("relation_type") or "Other")
         return RelationHypothesis(
-            arg1=arg1,
-            arg2=arg2,
-            relation_type=relation_type,
-            confidence=float(data.get("confidence", 0.5)),
+            subject=subject,
+            object=obj,
+            relation=relation,
+            confidence=_safe_float(data.get("confidence", 0.5)),
             rationale=str(data.get("rationale", "")),
-            evidence=[str(e) for e in evidence if e],
         )
 
 
 @dataclass
 class RelationCodingAgent:
-    """Generate executable relation class instantiations."""
+    """Generate JSON relation triples."""
 
     def generate_code(
         self,
@@ -216,36 +273,33 @@ class RelationCodingAgent:
         exemplar_block = ""
         if exemplars:
             exemplar_block = (
-                "# Exemplar sentences:\n"
-                + "\n".join(f"# {line}" for line in exemplars.splitlines() if line.strip())
+                "Exemplar sentences:\n"
+                + "\n".join(line for line in exemplars.splitlines() if line.strip())
                 + "\n\n"
             )
 
         system = (
-            "You are a coding agent for relation extraction. Complete the Python "
-            "result with a list of relation class instances.\n"
+            "You are a relation extraction agent. Return a JSON array of triples.\n"
             "CRITICAL RULES:\n"
-            "- Use the class defined in the schema, not a generic class.\n"
-            "- arg1 and arg2 MUST be exact minimal substrings copied from the text.\n"
-            "- evidence must be a list of exact text spans supporting the relation; "
-            "use [] if no short evidence phrase is appropriate.\n"
+            "- Each triple must be an object with exactly these semantic fields: "
+            "subject, object, relation.\n"
+            "- subject and object MUST be exact minimal substrings copied from the text.\n"
+            "- relation MUST be the relation label from the schema.\n"
             "- If the hinted pair does not express the relation, output [].\n"
-            "Output ONLY the Python list expression, with no markdown or explanation."
+            "- Do not output Python classes, arg1/arg2 fields, evidence, markdown, or explanation."
         )
         if patch_feedback:
             system += f"\n\nThe previous attempt failed. Fix this diagnostic:\n{patch_feedback}"
 
-        evidence_hint = ", ".join(repr(e) for e in hypothesis.evidence) or "[]"
         user = (
             f"{exemplar_block}"
-            f"# Relation schema\n{schema_definition}\n\n"
-            f"# Text to analyze\ntext = {text!r}\n\n"
-            f"# Hinted relation hypothesis\n"
-            f"# relation_type = {hypothesis.relation_type!r}\n"
-            f"# arg1 = {hypothesis.arg1!r}\n"
-            f"# arg2 = {hypothesis.arg2!r}\n"
-            f"# evidence = {evidence_hint}\n\n"
-            "# Complete this assignment:\nresult = "
+            f"Relation schema:\n{schema_definition}\n\n"
+            f"Text to analyze:\n{text}\n\n"
+            f"Hinted relation hypothesis:\n"
+            f"relation = {hypothesis.relation!r}\n"
+            f"subject = {hypothesis.subject!r}\n"
+            f"object = {hypothesis.object!r}\n\n"
+            'Return only JSON like [{"subject": "...", "object": "...", "relation": "..."}].'
         )
         raw = call_llm(
             [
@@ -254,27 +308,11 @@ class RelationCodingAgent:
             ],
             model=model,
         )
-        raw = re.sub(r"^```(?:python)?\s*", "", raw.strip(), flags=re.IGNORECASE)
-        raw = re.sub(r"\s*```$", "", raw.strip())
-        raw = raw.strip()
-
-        bracket_depth = 0
-        cut = len(raw)
-        for i, ch in enumerate(raw):
-            if ch == "[":
-                bracket_depth += 1
-            elif ch == "]":
-                bracket_depth -= 1
-                if bracket_depth == 0:
-                    cut = i + 1
-                    break
-        if cut < len(raw):
-            raw = raw[:cut]
-        return raw.strip()
+        return _extract_json_array(raw)
 
 
 class RelationVerificationError(Exception):
-    """Raised when relation code fails deterministic verification."""
+    """Raised when generated relation triples fail deterministic verification."""
 
     def __init__(self, errors: Sequence[str]) -> None:
         self.errors = list(errors)
@@ -283,83 +321,87 @@ class RelationVerificationError(Exception):
 
 @dataclass
 class RelationVerificationAgent:
-    """Execute and validate generated relation code."""
+    """Parse and validate generated relation triples."""
 
     check_args_in_text: bool = True
-    check_evidence_in_text: bool = True
-    check_relation_class: bool = True
+    check_relation_label: bool = True
     check_candidate_pairs: bool = True
 
     def verify_code(
         self,
         code_string: str,
         text: str,
-        class_namespace: dict[str, Any],
+        relation_schemas: Sequence[Any] | Mapping[str, Any],
         *,
-        expected_class: Optional[str] = None,
+        expected_relation: Optional[str] = None,
         allowed_pairs: Optional[Sequence[Tuple[str, str]]] = None,
     ) -> None:
         errors: List[str] = []
         try:
-            result = eval(code_string, {"__builtins__": {}}, class_namespace)  # noqa: S307
-        except SyntaxError as exc:
-            raise RelationVerificationError([f"[T3-SyntaxError] {exc}"]) from exc
-        except TypeError as exc:
-            raise RelationVerificationError([f"[T2/T3-TypeError] {exc}"]) from exc
-        except NameError as exc:
-            raise RelationVerificationError([f"[T3-NameError] {exc}"]) from exc
+            result = parse_triple_json(code_string)
+        except json.JSONDecodeError as exc:
+            raise RelationVerificationError([f"[T3-JSONError] {exc}"]) from exc
         except Exception as exc:
-            raise RelationVerificationError([f"[T3-Error] {type(exc).__name__}: {exc}"]) from exc
+            raise RelationVerificationError([f"[T3-ParseError] {type(exc).__name__}: {exc}"]) from exc
 
-        if not isinstance(result, (list, tuple)):
-            result = [result]
-        instances = [item for item in result if not isinstance(item, type) and hasattr(item, "__dict__")]
-        if not instances:
-            raise RelationVerificationError(["[T3-StructuralError] eval() produced no relation instances."])
+        if not result:
+            raise RelationVerificationError(["[T3-StructuralError] JSON list contains no relation triples."])
 
+        valid_relations = _relation_labels(relation_schemas)
+        symmetric_relations = _symmetric_labels(relation_schemas)
         allowed = set(allowed_pairs or [])
-        for inst in instances:
-            class_name = type(inst).__name__
-            if self.check_relation_class and expected_class and class_name != expected_class:
+
+        for idx, triple in enumerate(result):
+            if not isinstance(triple, dict):
+                errors.append(f"[T3-StructuralError] Triple #{idx} must be a JSON object.")
+                continue
+
+            extra_fields = sorted(set(triple) - {"subject", "object", "relation"})
+            if extra_fields:
                 errors.append(
-                    f"[T3-ClassMismatch] Expected class {expected_class}, got {class_name}."
+                    f"[T2-ExtraFields] Triple #{idx} has unsupported fields: {', '.join(extra_fields)}."
                 )
 
-            arg1 = getattr(inst, "arg1", None)
-            arg2 = getattr(inst, "arg2", None)
-            if not isinstance(arg1, str) or not arg1:
-                errors.append(f"[T2-MissingArg1] {class_name}.arg1 must be a non-empty string.")
-            if not isinstance(arg2, str) or not arg2:
-                errors.append(f"[T2-MissingArg2] {class_name}.arg2 must be a non-empty string.")
+            subject = triple.get("subject")
+            obj = triple.get("object")
+            relation = triple.get("relation")
 
-            if self.check_args_in_text:
-                for attr, span in (("arg1", arg1), ("arg2", arg2)):
-                    if isinstance(span, str) and span and span not in text:
-                        errors.append(
-                            f"[T1-SpanGrounding] {class_name}.{attr} span {span!r} "
-                            "does not appear in the input text."
-                        )
+            if not isinstance(subject, str) or not subject:
+                errors.append(f"[T2-MissingSubject] Triple #{idx}.subject must be a non-empty string.")
+            if not isinstance(obj, str) or not obj:
+                errors.append(f"[T2-MissingObject] Triple #{idx}.object must be a non-empty string.")
+            if not isinstance(relation, str) or not relation:
+                errors.append(f"[T2-MissingRelation] Triple #{idx}.relation must be a non-empty string.")
 
-            if self.check_candidate_pairs and allowed_pairs and isinstance(arg1, str) and isinstance(arg2, str):
-                symmetric_allowed = bool(getattr(inst, "symmetric", False)) and (arg2, arg1) in allowed
-                if (arg1, arg2) not in allowed and not symmetric_allowed:
+            if isinstance(relation, str):
+                if self.check_relation_label and relation not in valid_relations:
                     errors.append(
-                        f"[T1-PairConstraint] Pair ({arg1!r}, {arg2!r}) is not one "
-                        "of the provided candidate pairs."
+                        f"[T3-RelationLabel] Triple #{idx}.relation {relation!r} is not in the schema."
+                    )
+                if expected_relation and relation != expected_relation:
+                    errors.append(
+                        f"[T3-RelationMismatch] Expected relation {expected_relation!r}, got {relation!r}."
                     )
 
-            evidence = getattr(inst, "evidence", [])
-            if evidence is None:
-                evidence = []
-            if not isinstance(evidence, list):
-                errors.append(f"[T2-EvidenceType] {class_name}.evidence must be a list.")
-            elif self.check_evidence_in_text:
-                for span in evidence:
+            if self.check_args_in_text:
+                for attr, span in (("subject", subject), ("object", obj)):
                     if isinstance(span, str) and span and span not in text:
                         errors.append(
-                            f"[T1-EvidenceGrounding] Evidence span {span!r} "
+                            f"[T1-SpanGrounding] Triple #{idx}.{attr} span {span!r} "
                             "does not appear in the input text."
                         )
+
+            if self.check_candidate_pairs and allowed_pairs and isinstance(subject, str) and isinstance(obj, str):
+                symmetric_allowed = (
+                    isinstance(relation, str)
+                    and relation in symmetric_relations
+                    and (obj, subject) in allowed
+                )
+                if (subject, obj) not in allowed and not symmetric_allowed:
+                    errors.append(
+                        f"[T1-PairConstraint] Pair ({subject!r}, {obj!r}) is not one "
+                        "of the provided candidate subject/object pairs."
+                    )
 
         if errors:
             raise RelationVerificationError(errors)

@@ -4,10 +4,10 @@ This repository is now specialized for relation extraction (RE).  It keeps the
 multi-agent "extraction as code generation" idea from AEC, but all event
 extraction code, schemas, prompts, and scorers have been removed.
 
-The target output is executable relation code:
+The target output is a JSON list of relation triples:
 
-```python
-[PerEmployeeOf(arg1="Alice", arg2="Acme Corp", evidence=["joined"])]
+```json
+[{"subject": "Alice", "object": "Acme Corp", "relation": "per:employee_of"}]
 ```
 
 ## What It Supports
@@ -17,17 +17,16 @@ The target output is executable relation code:
 | Sentence-level RE | Yes | The main intended setting. |
 | Short paragraph / document input | Partial | The runner accepts long text, but there is no dedicated document graph, coreference, or cross-sentence candidate generator yet. |
 | Given entity-pair relation classification | Yes | Use `--mode given_pairs` or provide `candidate_pairs`; the planner must choose whether each pair expresses each relation. |
-| End-to-end relation triple extraction | Yes | Use `--mode end_to_end`, or omit candidate pairs in `--mode auto`; the planner proposes `(arg1, arg2, relation)` tuples directly. |
+| End-to-end relation triple extraction | Yes | Use `--mode end_to_end`, or omit candidate pairs in `--mode auto`; the planner proposes `(subject, object, relation)` triples directly. |
 | Full DocRE benchmark protocol | Not yet | Needs entity clustering, mention-level aggregation, NA handling, and document-level metric adapters. |
 
 ## Framework
 
 1. `RelationRetrievalAgent` generates synthetic examples for a relation schema.
-2. `RelationPlanningAgent` proposes ranked argument-pair hypotheses.
-3. `RelationCodingAgent` emits Python relation-class instances.
-4. `RelationVerificationAgent` executes the code and checks structural validity,
-   schema class, exact text grounding, evidence grounding, and optional candidate
-   pair constraints.
+2. `RelationPlanningAgent` proposes ranked subject/object hypotheses.
+3. `RelationCodingAgent` emits JSON triples with `subject`, `object`, and `relation`.
+4. `RelationVerificationAgent` parses the JSON and checks structural validity,
+   schema labels, exact text grounding, and optional candidate pair constraints.
 
 The outer loop traverses relation hypotheses.  The inner loop patches code using
 verification diagnostics, matching the AEC dual-loop design but specialized to
@@ -64,11 +63,11 @@ Provide a JSON or JSONL schema for unlabeled inference:
 [
   {
     "relation_type": "per:employee_of",
-    "description": "arg1 is a person who works for, is employed by, or holds a role at arg2.",
-    "arg1_role": "person",
-    "arg2_role": "organization",
-    "arg1_type": "PERSON",
-    "arg2_type": "ORG",
+    "description": "subject is a person who works for, is employed by, or holds a role at object.",
+    "subject_role": "person",
+    "object_role": "organization",
+    "subject_type": "PERSON",
+    "object_type": "ORG",
     "aliases": ["employee", "works for", "joined"]
   }
 ]
@@ -91,10 +90,9 @@ The runner accepts JSON arrays, JSON objects with `data` / `records` /
   "text": "Alice joined Acme Corp in 2024.",
   "relation_mentions": [
     {
-      "relation_type": "per:employee_of",
-      "arg1": {"text": "Alice"},
-      "arg2": {"text": "Acme Corp"},
-      "evidence": ["joined"]
+      "relation": "per:employee_of",
+      "subject": {"text": "Alice"},
+      "object": {"text": "Acme Corp"}
     }
   ]
 }
@@ -171,8 +169,8 @@ The built-in scorer reports:
 
 | Metric | Meaning |
 |---|---|
-| Argument Pair ID | F1 over `(arg1, arg2)` pairs. |
-| Relation Classification | F1 over `(relation_type, arg1, arg2)` triples. |
+| Argument Pair ID | F1 over `(subject, object)` pairs. |
+| Relation Classification | F1 over `(subject, object, relation)` triples. |
 
 The scorer is intentionally simple and sentence-level oriented.  Public DocRE
 datasets often require official evaluation scripts; use those scripts for final

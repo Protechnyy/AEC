@@ -1,9 +1,4 @@
-"""
-Relation schema utilities.
-
-Each relation label is mapped to a valid Python class that can be instantiated
-by the coding agent and checked deterministically by the verification agent.
-"""
+"""Relation schema utilities for subject-object-relation triples."""
 
 from __future__ import annotations
 
@@ -12,7 +7,7 @@ import keyword
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Iterable, List, Mapping, Optional, Sequence
 
 
 NO_RELATION_LABELS = {
@@ -29,46 +24,22 @@ NO_RELATION_LABELS = {
 
 @dataclass
 class RelationSchema:
-    """Executable schema metadata for one relation type."""
+    """Schema metadata for one relation type.
+
+    ``class_name`` is kept only so older schema files continue to load; the
+    extraction output is always JSON triples with ``subject``, ``object``, and
+    ``relation`` fields.
+    """
 
     relation_type: str
     class_name: str
-    arg1_role: str = "arg1"
-    arg2_role: str = "arg2"
-    arg1_type: str = "Entity"
-    arg2_type: str = "Entity"
+    subject_role: str = "subject"
+    object_role: str = "object"
+    subject_type: str = "Entity"
+    object_type: str = "Entity"
     description: str = ""
     aliases: List[str] = field(default_factory=list)
     symmetric: bool = False
-
-
-class Relation:
-    """Base class used by dynamically generated relation classes."""
-
-    relation_type = "Relation"
-    arg1_role = "arg1"
-    arg2_role = "arg2"
-    arg1_type = "Entity"
-    arg2_type = "Entity"
-    description = ""
-    aliases: List[str] = []
-    symmetric = False
-
-    def __init__(
-        self,
-        arg1: Optional[str] = None,
-        arg2: Optional[str] = None,
-        evidence: Optional[List[str]] = None,
-    ) -> None:
-        self.arg1 = arg1 if arg1 is not None else ""
-        self.arg2 = arg2 if arg2 is not None else ""
-        self.evidence = evidence if evidence is not None else []
-
-    def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}(arg1={self.arg1!r}, "
-            f"arg2={self.arg2!r}, evidence={self.evidence!r})"
-        )
 
 
 def is_no_relation(label: Optional[str]) -> bool:
@@ -136,16 +107,16 @@ def schema_from_mapping(
         class_name = base_class_name
 
     description = item.get("description") or item.get("definition") or item.get("doc") or ""
-    arg1_role = item.get("arg1_role") or item.get("subject_role") or item.get("head_role") or "arg1"
-    arg2_role = item.get("arg2_role") or item.get("object_role") or item.get("tail_role") or "arg2"
+    subject_role = item.get("subject_role") or item.get("arg1_role") or item.get("head_role") or "subject"
+    object_role = item.get("object_role") or item.get("arg2_role") or item.get("tail_role") or "object"
 
     return RelationSchema(
         relation_type=relation_type,
         class_name=class_name,
-        arg1_role=str(arg1_role),
-        arg2_role=str(arg2_role),
-        arg1_type=str(item.get("arg1_type") or item.get("subject_type") or item.get("head_type") or "Entity"),
-        arg2_type=str(item.get("arg2_type") or item.get("object_type") or item.get("tail_type") or "Entity"),
+        subject_role=str(subject_role),
+        object_role=str(object_role),
+        subject_type=str(item.get("subject_type") or item.get("arg1_type") or item.get("head_type") or "Entity"),
+        object_type=str(item.get("object_type") or item.get("arg2_type") or item.get("tail_type") or "Entity"),
         description=str(description),
         aliases=_coerce_aliases(item.get("aliases") or item.get("cues") or item.get("keywords")),
         symmetric=bool(item.get("symmetric", False)),
@@ -213,41 +184,28 @@ def infer_relation_schemas(relation_types: Iterable[str]) -> List[RelationSchema
 
 
 def build_relation_definition(schema: RelationSchema, *, include_base: bool = True) -> str:
-    """Return an executable-looking class definition for prompt context."""
+    """Return a plain-language schema definition for prompt context."""
 
-    lines: List[str] = []
-    if include_base:
-        lines.extend(
-            [
-                "from typing import List, Optional",
-                "",
-                "class Relation:",
-                "    arg1: str",
-                "    arg2: str",
-                "    evidence: List[str]",
-                "",
-            ]
-        )
-
-    lines.append(f"# Relation type: {schema.relation_type}")
+    del include_base
+    lines: List[str] = [
+        f"Relation: {schema.relation_type}",
+        f"Subject role: {schema.subject_role}",
+        f"Object role: {schema.object_role}",
+        f"Subject type: {schema.subject_type}",
+        f"Object type: {schema.object_type}",
+    ]
     if schema.description:
         for desc_line in schema.description.splitlines():
-            lines.append(f"# Description: {desc_line}")
+            lines.append(f"Description: {desc_line}")
     if schema.aliases:
-        lines.append(f"# Common cues: {', '.join(schema.aliases)}")
-    lines.extend(
-        [
-            f"class {schema.class_name}(Relation):",
-            f"    relation_type = {schema.relation_type!r}",
-            f"    arg1_role = {schema.arg1_role!r}",
-            f"    arg2_role = {schema.arg2_role!r}",
-            f"    arg1_type = {schema.arg1_type!r}",
-            f"    arg2_type = {schema.arg2_type!r}",
-            f"    symmetric = {schema.symmetric!r}",
-            "    arg1: str",
-            "    arg2: str",
-            "    evidence: List[str]",
-        ]
+        lines.append(f"Common cues: {', '.join(schema.aliases)}")
+    if schema.symmetric:
+        lines.append("Directionality: symmetric")
+    else:
+        lines.append("Directionality: directed from subject to object")
+    lines.append(
+        'Required output triple shape: {"subject": "...", "object": "...", '
+        f'"relation": "{schema.relation_type}"' + "}"
     )
     return "\n".join(lines)
 
@@ -261,46 +219,5 @@ def build_relation_definitions(schemas: Sequence[RelationSchema]) -> str:
     return "\n\n".join(chunks)
 
 
-def make_relation_namespace(schemas: Sequence[RelationSchema]) -> Dict[str, Any]:
-    """Create a namespace containing executable relation classes for ``eval``."""
-
-    namespace: Dict[str, Any] = {
-        "Relation": Relation,
-        "List": List,
-        "Optional": Optional,
-    }
-    for schema in schemas:
-        attrs = {
-            "__module__": __name__,
-            "relation_type": schema.relation_type,
-            "arg1_role": schema.arg1_role,
-            "arg2_role": schema.arg2_role,
-            "arg1_type": schema.arg1_type,
-            "arg2_type": schema.arg2_type,
-            "description": schema.description,
-            "aliases": list(schema.aliases),
-            "symmetric": schema.symmetric,
-        }
-        namespace[schema.class_name] = type(schema.class_name, (Relation,), attrs)
-    return namespace
-
-
-def schemas_by_relation_type(schemas: Sequence[RelationSchema]) -> Dict[str, RelationSchema]:
+def schemas_by_relation_type(schemas: Sequence[RelationSchema]) -> dict[str, RelationSchema]:
     return {schema.relation_type: schema for schema in schemas}
-
-
-def schemas_by_class_name(schemas: Sequence[RelationSchema]) -> Dict[str, RelationSchema]:
-    return {schema.class_name: schema for schema in schemas}
-
-
-def relation_instance_key(instance: Any, schema_by_class: Mapping[str, RelationSchema]) -> Tuple[str, str, str]:
-    """Return a canonical ``(relation_type, arg1, arg2)`` key."""
-
-    class_name = type(instance).__name__
-    schema = schema_by_class.get(class_name)
-    relation_type = getattr(instance, "relation_type", class_name)
-    arg1 = getattr(instance, "arg1", "")
-    arg2 = getattr(instance, "arg2", "")
-    if schema and schema.symmetric:
-        arg1, arg2 = sorted([arg1, arg2])
-    return (relation_type, arg1, arg2)

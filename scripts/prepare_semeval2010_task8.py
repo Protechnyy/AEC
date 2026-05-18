@@ -15,12 +15,10 @@ if str(ROOT.parent) not in sys.path:
     sys.path.insert(0, str(ROOT.parent))
 
 from AEC.relation_schema import (  # noqa: E402
-    RelationSchema,
     load_relation_schemas,
-    make_relation_namespace,
-    schemas_by_class_name,
+    schemas_by_relation_type,
 )
-from AEC.run_relation_inference import read_json_records, safe_eval_relations  # noqa: E402
+from AEC.run_relation_inference import read_json_records, safe_parse_triples  # noqa: E402
 
 
 RELATION_DESCRIPTIONS = {
@@ -34,11 +32,6 @@ RELATION_DESCRIPTIONS = {
     "Message-Topic": "One nominal is a message, statement, or communication about the other topic.",
     "Product-Producer": "One nominal is a product created, manufactured, or produced by the other.",
 }
-
-
-def class_name_for_label(label: str) -> str:
-    words = re.findall(r"[A-Za-z0-9]+", label)
-    return "".join(word[:1].upper() + word[1:] for word in words)
 
 
 def parse_sentence_line(line: str) -> Tuple[str, str, str, str]:
@@ -87,10 +80,9 @@ def convert_split(sent_path: Path, label_path: Path, out_path: Path) -> None:
             if label != "Other":
                 record["relation_mentions"].append(
                     {
-                        "relation_type": label,
-                        "arg1": {"text": e1},
-                        "arg2": {"text": e2},
-                        "evidence": [],
+                        "relation": label,
+                        "subject": {"text": e1},
+                        "object": {"text": e2},
                     }
                 )
             out.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -113,15 +105,16 @@ def create_schema(train_labels: Iterable[str], test_labels: Iterable[str], out_p
         schemas.append(
             {
                 "relation_type": label,
-                "class_name": class_name_for_label(label),
                 "description": (
                     f"{RELATION_DESCRIPTIONS.get(base, 'A semantic relation between two nominals')} "
-                    f"For this directed label, arg1 is {source} and arg2 is {target}."
+                    "SemEval examples are classified over the fixed candidate pair "
+                    "subject=e1 and object=e2; this directed label means the base "
+                    f"relation's first argument is {source} and second argument is {target}."
                 ),
-                "arg1_role": source,
-                "arg2_role": target,
-                "arg1_type": "NOMINAL",
-                "arg2_type": "NOMINAL",
+                "subject_role": "e1",
+                "object_role": "e2",
+                "subject_type": "NOMINAL",
+                "object_type": "NOMINAL",
                 "aliases": [base.replace("-", " ")],
             }
         )
@@ -156,20 +149,20 @@ def prepare(args: argparse.Namespace) -> None:
 
 def export_official(args: argparse.Namespace) -> None:
     schemas = load_relation_schemas(args.schema)
-    namespace = make_relation_namespace(schemas)
-    schema_by_class = schemas_by_class_name(schemas)
+    schema_by_type = schemas_by_relation_type(schemas)
     records = read_json_records(args.predictions)
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", encoding="utf-8") as out:
         for record in records:
-            instances, _ = safe_eval_relations(str(record.get("Prediction", "[]")), namespace)
+            triples, _ = safe_parse_triples(record.get("Prediction", "[]"))
             label = "Other"
-            if instances:
-                schema = schema_by_class.get(type(instances[0]).__name__)
-                if schema:
-                    label = schema.relation_type
+            for triple in triples:
+                relation = str(triple.get("relation", ""))
+                if relation in schema_by_type:
+                    label = relation
+                    break
             out.write(f"{record.get('doc_id')}\t{label}\n")
     print(f"Wrote {out_path}")
 

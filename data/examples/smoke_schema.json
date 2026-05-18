@@ -1,22 +1,20 @@
 [
   {
     "relation_type": "per:employee_of",
-    "class_name": "PerEmployeeOf",
-    "description": "arg1 is a person who works for, joined, leads, or is employed by arg2.",
-    "arg1_role": "person",
-    "arg2_role": "organization",
-    "arg1_type": "PERSON",
-    "arg2_type": "ORG",
+    "description": "subject is a person who works for, joined, leads, or is employed by object.",
+    "subject_role": "person",
+    "object_role": "organization",
+    "subject_type": "PERSON",
+    "object_type": "ORG",
     "aliases": ["works for", "joined", "employee", "CEO of"]
   },
   {
     "relation_type": "org:founded_by",
-    "class_name": "OrgFoundedBy",
-    "description": "arg1 is an organization that was founded, created, or established by arg2.",
-    "arg1_role": "organization",
-    "arg2_role": "founder",
-    "arg1_type": "ORG",
-    "arg2_type": "PERSON",
+    "description": "subject is an organization that was founded, created, or established by object.",
+    "subject_role": "organization",
+    "object_role": "founder",
+    "subject_type": "ORG",
+    "object_type": "PERSON",
     "aliases": ["founded", "created", "established"]
   }
 ]
