@@ -1,0 +1,3 @@
+{"id":"smoke-1","text":"Alice joined Acme Corp in 2024.","candidate_pairs":[[{"text":"Alice"},{"text":"Acme Corp"}]],"relation_mentions":[{"relation_type":"per:employee_of","arg1":{"text":"Alice"},"arg2":{"text":"Acme Corp"},"evidence":["joined"]}]}
+{"id":"smoke-2","text":"Beta Labs was founded by Bob in Seattle.","candidate_pairs":[[{"text":"Beta Labs"},{"text":"Bob"}]],"relation_mentions":[{"relation_type":"org:founded_by","arg1":{"text":"Beta Labs"},"arg2":{"text":"Bob"},"evidence":["founded by"]}]}
+{"id":"smoke-3","text":"Carol visited Delta Museum on Monday.","candidate_pairs":[[{"text":"Carol"},{"text":"Delta Museum"}]],"relation_mentions":[]}

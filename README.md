@@ -1,374 +1,197 @@
-# Agent-Event-Coder (AEC)
+# Agent-Relation-Coder
 
-Partial code for the AAAI 2026 (Oral) paper:
+This repository is now specialized for relation extraction (RE).  It keeps the
+multi-agent "extraction as code generation" idea from AEC, but all event
+extraction code, schemas, prompts, and scorers have been removed.
 
-> **Extracting Events Like Code: A Multi-Agent Programming Framework for Zero-Shot Event Extraction**  
-> Quanjiang Guo, Sijie Wang, Jinchuan Zhang, Ben Zhang, Zhao Kang, Ling Tian, Ke Yan  
-> UESTC · AAAI 2026 · [arXiv 2511.13118](https://arxiv.org/abs/2511.13118)
+The target output is executable relation code:
 
-AEC treats zero-shot event extraction as a **code generation** problem. Four specialized LLM agents (Retrieval, Planning, Coding, Verification) collaborate in a dual-loop refinement algorithm to produce Python class instantiations as structured event outputs.
+```python
+[PerEmployeeOf(arg1="Alice", arg2="Acme Corp", evidence=["joined"])]
+```
 
----
+## What It Supports
 
-## Table of Contents
+| Setting | Supported | Notes |
+|---|---:|---|
+| Sentence-level RE | Yes | The main intended setting. |
+| Short paragraph / document input | Partial | The runner accepts long text, but there is no dedicated document graph, coreference, or cross-sentence candidate generator yet. |
+| Given entity-pair relation classification | Yes | Use `--mode given_pairs` or provide `candidate_pairs`; the planner must choose whether each pair expresses each relation. |
+| End-to-end relation triple extraction | Yes | Use `--mode end_to_end`, or omit candidate pairs in `--mode auto`; the planner proposes `(arg1, arg2, relation)` tuples directly. |
+| Full DocRE benchmark protocol | Not yet | Needs entity clustering, mention-level aggregation, NA handling, and document-level metric adapters. |
 
-1. [Environment Setup](#1-environment-setup)
-2. [Dataset Acquisition](#2-dataset-acquisition)
-3. [TextEE Preprocessing](#3-textee-preprocessing)
-4. [LLM Setup](#4-llm-setup)
-5. [Running Inference](#5-running-inference)
-6. [Evaluation](#6-evaluation)
-7. [Repository Structure](#7-repository-structure)
-8. [Citation](#8-citation)
+## Framework
 
----
+1. `RelationRetrievalAgent` generates synthetic examples for a relation schema.
+2. `RelationPlanningAgent` proposes ranked argument-pair hypotheses.
+3. `RelationCodingAgent` emits Python relation-class instances.
+4. `RelationVerificationAgent` executes the code and checks structural validity,
+   schema class, exact text grounding, evidence grounding, and optional candidate
+   pair constraints.
 
-## 1. Environment Setup
+The outer loop traverses relation hypotheses.  The inner loop patches code using
+verification diagnostics, matching the AEC dual-loop design but specialized to
+relation extraction.
 
-### 1.1 Create conda environment
+## Installation
 
 ```bash
-conda create -n AEC python=3.10 -y
-conda activate AEC
-pip install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
-Contents of `requirements.txt`:
-```
-pydantic>=2.0.0
-openai>=1.0.0
-prettytable>=3.0.0
-tqdm>=4.0.0
-numpy>=1.20.0
-datasets>=2.0.0
-pandas>=1.3.0
-scikit-learn>=1.0.0
-```
-
----
-
-## 2. Dataset Acquisition
-
-All five datasets require preprocessing via [TextEE](https://github.com/ej0cl6/TextEE) before use.
-
-| Dataset | Domain | Task | # Types | Source |
-|---|---|---|---|---|
-| `ace05-en` | News | E2E | 33 | [LDC2006T06](https://catalog.ldc.upenn.edu/LDC2006T06) |
-| `fewevent` | General | ED | 100 | [GitHub](https://github.com/231sm/Low_Resource_KBP#) |
-| `genia2011` | Biomedical | E2E | 9 | [BioNLP-ST 2011](https://bionlp-st.dbcls.jp/GE/2011/downloads/) |
-| `speed` | Epidemiology | ED | 7 | [NAACL 2024 Paper](https://github.com/PlusLabNLP/SPEED) |
-| `casie` | Cybersecurity | E2E | 5 | [GitHub](https://github.com/Ebiquity/CASIE) |
-
----
-
-## 3. TextEE Preprocessing
-
-All five datasets must be converted to TextEE's standardized JSON-lines format before inference. TextEE provides preprocessors for each dataset.
-
-### 3.1 Install TextEE
+For this machine, use the 4090 as PCI bus GPU 1:
 
 ```bash
-git clone https://github.com/ej0cl6/TextEE.git
-cd TextEE
-pip install -r requirements.txt   # or: conda env create -f env.yml
-python -m spacy download en_core_web_lg
+CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=1 \
+.venv/bin/python -c "import torch; print(torch.cuda.get_device_name(0))"
 ```
 
-### 3.2 Expected output structure
+Start the recommended 4090 model server after the GPU has enough free memory:
 
-After preprocessing, TextEE produces split files at:
-```
-TextEE/data/
-└── {dataset}/
-    └── split1/
-        ├── train.json
-        ├── dev.json
-        └── test.json
+```bash
+scripts/start_qwen25_7b_awq_4090.sh
 ```
 
-Each line in these files is a JSON object:
+The script serves `Qwen/Qwen2.5-7B-Instruct-AWQ` at
+`http://127.0.0.1:8000/v1` with vLLM.
+
+## Relation Schema
+
+Provide a JSON or JSONL schema for unlabeled inference:
+
+```json
+[
+  {
+    "relation_type": "per:employee_of",
+    "description": "arg1 is a person who works for, is employed by, or holds a role at arg2.",
+    "arg1_role": "person",
+    "arg2_role": "organization",
+    "arg1_type": "PERSON",
+    "arg2_type": "ORG",
+    "aliases": ["employee", "works for", "joined"]
+  }
+]
+```
+
+If `--schema` is omitted, relation types are inferred from gold labels in the
+input data.  That is convenient for quick benchmark runs, but explicit schemas
+are better for zero-shot experiments.
+
+## Input Data
+
+The runner accepts JSON arrays, JSON objects with `data` / `records` /
+`examples` / `samples`, JSONL, and concatenated JSON objects.
+
+### End-To-End Triple Extraction
+
 ```json
 {
-  "wnd_id": "doc_id-sentence_id",
-  "text": "The soldiers attacked the village.",
-  "event_mentions": [
+  "id": "ex1",
+  "text": "Alice joined Acme Corp in 2024.",
+  "relation_mentions": [
     {
-      "event_type": "Conflict:Attack",
-      "trigger": {"text": "attacked", "start": 13, "end": 21},
-      "arguments": [
-        {"role": "Attacker", "text": "soldiers", "start": 4, "end": 12}
-      ]
+      "relation_type": "per:employee_of",
+      "arg1": {"text": "Alice"},
+      "arg2": {"text": "Acme Corp"},
+      "evidence": ["joined"]
     }
   ]
 }
 ```
 
-### 3.3 Run preprocessing
+### TACRED-Style Given Pair
+
+```json
+{
+  "token": ["Alice", "joined", "Acme", "Corp", "."],
+  "subj_start": 0,
+  "subj_end": 0,
+  "obj_start": 2,
+  "obj_end": 3,
+  "relation": "per:employee_of"
+}
+```
+
+### Explicit Candidate Pairs
+
+```json
+{
+  "text": "Alice joined Acme Corp. Bob founded Beta Labs.",
+  "candidate_pairs": [
+    [{"text": "Alice"}, {"text": "Acme Corp"}],
+    [{"text": "Bob"}, {"text": "Beta Labs"}]
+  ]
+}
+```
+
+## Running
+
+Given-pair relation classification:
 
 ```bash
-cd TextEE
-
-# ACE05-EN (replace path with your LDC data location)
-python TextEE/preprocess.py \
-    --dataset ACE05 \
-    --input_dir /path/to/ldc/ace05 \
-    --output_dir data/ace05-en
-
-# FewEvent
-python TextEE/preprocess.py \
-    --dataset FewEvent \
-    --input_dir /path/to/FewEvent/data \
-    --output_dir data/fewevent
-
-# GENIA2011
-python TextEE/preprocess.py \
-    --dataset Genia2011 \
-    --input_dir /path/to/genia2011/raw \
-    --output_dir data/genia2011
-
-# SPEED
-python TextEE/preprocess.py \
-    --dataset SPEED \
-    --input_dir /path/to/SPEED/data \
-    --output_dir data/speed
-
-# CASIE
-python TextEE/preprocess.py \
-    --dataset CASIE \
-    --input_dir /path/to/CASIE/data \
-    --output_dir data/casie
-```
-
-> **Note**: The exact `--dataset` flag names and argument structure may vary. Check `TextEE/preprocess.py --help` for the current interface. If the script is not at that path, look for it under `TextEE/TextEE/preprocess.py`.
-
-### 3.4 Copy preprocessed data to AEC
-
-```bash
-# From the TextEE directory:
-mkdir -p /home/users/yy/code/AEC/data/raw/TextEE
-
-cp -r data/ace05-en  /home/users/yy/code/AEC/data/raw/TextEE/
-cp -r data/fewevent  /home/users/yy/code/AEC/data/raw/TextEE/
-cp -r data/genia2011 /home/users/yy/code/AEC/data/raw/TextEE/
-cp -r data/speed     /home/users/yy/code/AEC/data/raw/TextEE/
-cp -r data/casie     /home/users/yy/code/AEC/data/raw/TextEE/
-```
-
-Final structure expected by `run_inference.py`:
-```
-AEC/data/raw/TextEE/
-├── ace05-en/split1/{train,dev,test}.json
-├── fewevent/split1/{train,dev,test}.json
-├── genia2011/split1/{train,dev,test}.json
-├── speed/split1/{train,dev,test}.json
-└── casie/split1/{train,dev,test}.json
-```
-
----
-
-## 4. LLM Setup (vLLM)
-
-Serve local models via vLLM with an OpenAI-compatible HTTP endpoint. Matches the paper's setup (Llama3-8B-Instruct / Llama3-70B-Instruct).
-
-**Requirements**: ≥16 GB VRAM for the 8B model; 4 GPUs (≥80 GB total) for 70B.
-
-```bash
-pip install vllm
-
-# Get a HuggingFace token (free): https://huggingface.co/settings/tokens
-# Accept the Llama 3 license: https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct
-
-# Start vLLM server (run in a separate terminal / tmux)
-HF_TOKEN=hf_... \
-vllm serve meta-llama/Meta-Llama-3-8B-Instruct \
-    --port 8000 \
-    --tensor-parallel-size 1      # use 4 for the 70B model
-
-# Verify the server is up
-curl http://localhost:8000/v1/models
-```
-
----
-
-## 5. Running Inference
-
-All commands below are run from the **AEC directory** (`/home/users/yy/code/AEC`).
-
-### 5.1 Full pipeline on a dataset
-
-```bash
-conda activate AEC
-
-# Start vLLM server first (see §4)
 OPENAI_API_KEY=EMPTY \
-python run_inference.py \
-    --dataset casie \
-    --model meta-llama/Meta-Llama-3-8B-Instruct \
-    --base_url http://localhost:8000/v1 \
-    --k 3 --t 3
+.venv/bin/python run_relation_inference.py \
+  --data data/re/test.jsonl \
+  --schema data/re/schema.json \
+  --model Qwen/Qwen2.5-7B-Instruct-AWQ \
+  --base_url http://127.0.0.1:8000/v1 \
+  --mode given_pairs \
+  --k 3 --t 3
 ```
 
-### 5.2 All five datasets (paper reproduction)
+End-to-end relation triple extraction:
 
 ```bash
-#!/bin/bash
-# Run from: /home/users/yy/code/AEC
-
-DATASETS=("ace05-en" "fewevent" "genia2011" "speed" "casie")
-MODEL="meta-llama/Meta-Llama-3-8B-Instruct"
-BASE_URL="http://localhost:8000/v1"
-
-for DATASET in "${DATASETS[@]}"; do
-    echo "=== Running $DATASET ==="
-    OPENAI_API_KEY=EMPTY python run_inference.py \
-        --dataset "$DATASET" \
-        --model "$MODEL" \
-        --base_url "$BASE_URL" \
-        --k 3 --t 3 \
-        --resume    # safe to re-run; skips already-done samples
-done
+OPENAI_API_KEY=EMPTY \
+.venv/bin/python run_relation_inference.py \
+  --data data/re/test.jsonl \
+  --schema data/re/schema.json \
+  --model Qwen/Qwen2.5-7B-Instruct-AWQ \
+  --base_url http://127.0.0.1:8000/v1 \
+  --mode end_to_end \
+  --k 3 --t 3
 ```
 
-### 5.3 CLI flags reference
-
-| Flag | Default | Description |
-|---|---|---|
-| `--dataset` | required | One of: `ace05-en`, `fewevent`, `genia2011`, `speed`, `casie` |
-| `--model` | `gpt-4o` | LLM model ID |
-| `--base_url` | OpenAI | Point to vLLM/Ollama server |
-| `--k` | `3` | Max planning hypotheses (paper: 3) |
-| `--t` | `3` | Max patch attempts per hypothesis (paper: 3) |
-| `--split` | `test` | Dataset split: `train`, `dev`, or `test` |
-| `--max_samples` | all | Limit to first N samples (for quick testing) |
-| `--output` | auto | Output JSON path |
-| `--delay` | `1.0` | Sleep seconds between API calls (rate limit) |
-| `--resume` | off | Skip already-processed samples |
-| `--no_eval` | off | Skip auto-evaluation after inference |
-| `--eval_only FILE` | — | Only evaluate an existing predictions file |
-
----
-
-## 6. Evaluation
-
-Evaluation runs automatically after inference. Predictions are saved to:
-```
-AEC/outputs/{dataset}_{model}_predictions.json
-AEC/outputs/{dataset}_{model}_predictions_scores.json   ← F1 scores (×100)
-```
-
-### 6.1 Manually evaluate an existing predictions file
+Smoke test after the server is up:
 
 ```bash
-cd /home/users/yy/code/AEC
-python run_inference.py \
-    --eval_only outputs/ace05-en_gpt4o_predictions.json
+scripts/run_smoke.sh
 ```
 
-Or run the scorer directly:
+Evaluate an existing prediction file:
+
 ```bash
-cd /home/users/yy/code/AEC/utils/code_evaluation
-python events_scorer.py \
-    --input_file ../../outputs/ace05-en_gpt4o_predictions.json
+.venv/bin/python run_relation_inference.py --eval_only outputs/my_predictions.json
 ```
 
-### 6.2 Metrics
+## Metrics
 
-| Metric | Description |
+The built-in scorer reports:
+
+| Metric | Meaning |
 |---|---|
-| **TI** — Trigger Identification | F1 for correct trigger span (any event type) |
-| **TC** — Trigger Classification | F1 for correct trigger span + correct event type |
-| **AI** — Argument Identification | F1 for correct argument span (linked to correct trigger) |
-| **AC** — Argument Classification | F1 for correct argument span + correct role |
+| Argument Pair ID | F1 over `(arg1, arg2)` pairs. |
+| Relation Classification | F1 over `(relation_type, arg1, arg2)` triples. |
 
-All metrics are **micro-averaged** over three independent runs in the paper.
+The scorer is intentionally simple and sentence-level oriented.  Public DocRE
+datasets often require official evaluation scripts; use those scripts for final
+numbers.
 
-### 6.3 Reference results (from paper Table 1, Llama3-8B-Instruct)
+## Files
 
-| Dataset | Task | TI | TC | AI | AC |
-|---|---|---|---|---|---|
-| `ace05-en` | E2E | 56.6 | 48.8 | 37.6 | 34.2 |
-| `fewevent` | ED | 38.4 | 36.5 | — | — |
-| `genia2011` | E2E | 47.2 | 40.1 | 33.7 | 28.9 |
-| `speed` | ED | 61.8 | 58.3 | — | — |
-| `casie` | E2E | 66.3 | 63.1 | 34.8 | 31.2 |
-
----
-
-## 7. Repository Structure
-
-```
+```text
 AEC/
-├── __init__.py                  # Package init; exports main classes
-├── run_inference.py             # ★ Full paper reproduction script
-├── planning_agent.py            # Agent 2: trigger hypothesis generation (LLM)
-├── coding_agent.py              # Agent 3: Python code generation (LLM)
-├── retrieval_agent.py           # Agent 1: exemplar sentence generation (LLM)
-├── verification_agent.py        # Agent 4: T1/T2/T3 verification checks
-├── ontology.py                  # Event schema manager
-├── event_schema.py              # EventSchema / EventObject data classes
-├── llm_utils.py                 # OpenAI / vLLM API wrapper
+├── __init__.py
+├── llm_utils.py
+├── relation_agents.py
+├── relation_schema.py
 ├── requirements.txt
-│
-├── data/
-│   └── raw/TextEE/              # ← place preprocessed TextEE data here
-│       ├── ace05-en/split1/
-│       ├── fewevent/split1/
-│       ├── genia2011/split1/
-│       ├── speed/split1/
-│       └── casie/split1/
-│
-├── outputs/                     # Inference predictions + scores saved here
-│
-└── utils/
-    ├── code_evaluation/
-    │   ├── events_scorer.py     # Precision / Recall / F1 scorer
-    │   ├── all_ee_definitions.py
-    │   └── utils_typing.py
-    ├── code_prompts/
-    │   ├── prepare_dataset.py   # Convert raw TextEE data to code prompts
-    │   └── utils.py
-    └── code_schema_generation/
-        ├── python_event_defs/   # Python dataclass definitions per dataset
-        │   ├── ace05-en_definitions_new.py
-        │   ├── casie_definitions_new.py
-        │   ├── fewevent_definitions_new.py
-        │   ├── genia2011_definitions_new.py
-        │   └── speed_definitions_new.py
-        └── init_prompts/        # Schema strings used as LLM context
-            ├── ace05-en.txt
-            ├── casie.txt
-            ├── fewevent.txt
-            ├── genia2011.txt
-            └── speed.txt
-```
-
----
-
-## 8. Citation
-
-If you use this code or the AEC framework, please cite:
-
-```bibtex
-@inproceedings{guo2026aec,
-  title     = {Extracting Events Like Code: A Multi-Agent Programming Framework
-               for Zero-Shot Event Extraction},
-  author    = {Quanjiang Guo and Sijie Wang and Jinchuan Zhang and Ben Zhang and
-               Zhao Kang and Ling Tian and Ke Yan},
-  booktitle = {Proceedings of the 40th AAAI Conference on Artificial Intelligence},
-  year      = {2026},
-}
-```
-
-Also cite TextEE if you use their preprocessing:
-
-```bibtex
-@article{huang2023textee,
-  title   = {TextEE: Benchmark, Reevaluation, Reflections, and Future Challenges
-             in Event Extraction},
-  author  = {Kuan-Hao Huang and I-Hung Hsu and Tanmay Parekh and Zhiyu Xie and
-             Zixuan Zhang and Premkumar Natarajan and Kai-Wei Chang and
-             Nanyun Peng and Heng Ji},
-  journal = {arXiv preprint arXiv:2311.09562},
-  year    = {2023},
-}
+├── run_relation_inference.py
+├── scripts/
+│   ├── run_smoke.sh
+│   └── start_qwen25_7b_awq_4090.sh
+└── data/examples/
+    ├── smoke_re.jsonl
+    └── smoke_schema.json
 ```

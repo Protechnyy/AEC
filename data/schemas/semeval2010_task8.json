@@ -1,0 +1,218 @@
+[
+  {
+    "relation_type": "Cause-Effect(e1,e2)",
+    "class_name": "CauseEffectE1E2",
+    "description": "One nominal causes, produces, generates, or leads to the other. For this directed label, arg1 is e1 and arg2 is e2.",
+    "arg1_role": "e1",
+    "arg2_role": "e2",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Cause Effect"
+    ]
+  },
+  {
+    "relation_type": "Cause-Effect(e2,e1)",
+    "class_name": "CauseEffectE2E1",
+    "description": "One nominal causes, produces, generates, or leads to the other. For this directed label, arg1 is e2 and arg2 is e1.",
+    "arg1_role": "e2",
+    "arg2_role": "e1",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Cause Effect"
+    ]
+  },
+  {
+    "relation_type": "Component-Whole(e1,e2)",
+    "class_name": "ComponentWholeE1E2",
+    "description": "One nominal is a component, part, member, or constituent of the other whole. For this directed label, arg1 is e1 and arg2 is e2.",
+    "arg1_role": "e1",
+    "arg2_role": "e2",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Component Whole"
+    ]
+  },
+  {
+    "relation_type": "Component-Whole(e2,e1)",
+    "class_name": "ComponentWholeE2E1",
+    "description": "One nominal is a component, part, member, or constituent of the other whole. For this directed label, arg1 is e2 and arg2 is e1.",
+    "arg1_role": "e2",
+    "arg2_role": "e1",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Component Whole"
+    ]
+  },
+  {
+    "relation_type": "Content-Container(e1,e2)",
+    "class_name": "ContentContainerE1E2",
+    "description": "One nominal is content located in or held by the other container. For this directed label, arg1 is e1 and arg2 is e2.",
+    "arg1_role": "e1",
+    "arg2_role": "e2",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Content Container"
+    ]
+  },
+  {
+    "relation_type": "Content-Container(e2,e1)",
+    "class_name": "ContentContainerE2E1",
+    "description": "One nominal is content located in or held by the other container. For this directed label, arg1 is e2 and arg2 is e1.",
+    "arg1_role": "e2",
+    "arg2_role": "e1",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Content Container"
+    ]
+  },
+  {
+    "relation_type": "Entity-Destination(e1,e2)",
+    "class_name": "EntityDestinationE1E2",
+    "description": "One nominal moves, is sent, or is transferred to the other destination. For this directed label, arg1 is e1 and arg2 is e2.",
+    "arg1_role": "e1",
+    "arg2_role": "e2",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Entity Destination"
+    ]
+  },
+  {
+    "relation_type": "Entity-Destination(e2,e1)",
+    "class_name": "EntityDestinationE2E1",
+    "description": "One nominal moves, is sent, or is transferred to the other destination. For this directed label, arg1 is e2 and arg2 is e1.",
+    "arg1_role": "e2",
+    "arg2_role": "e1",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Entity Destination"
+    ]
+  },
+  {
+    "relation_type": "Entity-Origin(e1,e2)",
+    "class_name": "EntityOriginE1E2",
+    "description": "One nominal comes from, is derived from, or originates in the other. For this directed label, arg1 is e1 and arg2 is e2.",
+    "arg1_role": "e1",
+    "arg2_role": "e2",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Entity Origin"
+    ]
+  },
+  {
+    "relation_type": "Entity-Origin(e2,e1)",
+    "class_name": "EntityOriginE2E1",
+    "description": "One nominal comes from, is derived from, or originates in the other. For this directed label, arg1 is e2 and arg2 is e1.",
+    "arg1_role": "e2",
+    "arg2_role": "e1",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Entity Origin"
+    ]
+  },
+  {
+    "relation_type": "Instrument-Agency(e1,e2)",
+    "class_name": "InstrumentAgencyE1E2",
+    "description": "One nominal is an instrument, tool, or means used by the other agency. For this directed label, arg1 is e1 and arg2 is e2.",
+    "arg1_role": "e1",
+    "arg2_role": "e2",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Instrument Agency"
+    ]
+  },
+  {
+    "relation_type": "Instrument-Agency(e2,e1)",
+    "class_name": "InstrumentAgencyE2E1",
+    "description": "One nominal is an instrument, tool, or means used by the other agency. For this directed label, arg1 is e2 and arg2 is e1.",
+    "arg1_role": "e2",
+    "arg2_role": "e1",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Instrument Agency"
+    ]
+  },
+  {
+    "relation_type": "Member-Collection(e1,e2)",
+    "class_name": "MemberCollectionE1E2",
+    "description": "One nominal is a member, element, or item in the other collection. For this directed label, arg1 is e1 and arg2 is e2.",
+    "arg1_role": "e1",
+    "arg2_role": "e2",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Member Collection"
+    ]
+  },
+  {
+    "relation_type": "Member-Collection(e2,e1)",
+    "class_name": "MemberCollectionE2E1",
+    "description": "One nominal is a member, element, or item in the other collection. For this directed label, arg1 is e2 and arg2 is e1.",
+    "arg1_role": "e2",
+    "arg2_role": "e1",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Member Collection"
+    ]
+  },
+  {
+    "relation_type": "Message-Topic(e1,e2)",
+    "class_name": "MessageTopicE1E2",
+    "description": "One nominal is a message, statement, or communication about the other topic. For this directed label, arg1 is e1 and arg2 is e2.",
+    "arg1_role": "e1",
+    "arg2_role": "e2",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Message Topic"
+    ]
+  },
+  {
+    "relation_type": "Message-Topic(e2,e1)",
+    "class_name": "MessageTopicE2E1",
+    "description": "One nominal is a message, statement, or communication about the other topic. For this directed label, arg1 is e2 and arg2 is e1.",
+    "arg1_role": "e2",
+    "arg2_role": "e1",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Message Topic"
+    ]
+  },
+  {
+    "relation_type": "Product-Producer(e1,e2)",
+    "class_name": "ProductProducerE1E2",
+    "description": "One nominal is a product created, manufactured, or produced by the other. For this directed label, arg1 is e1 and arg2 is e2.",
+    "arg1_role": "e1",
+    "arg2_role": "e2",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Product Producer"
+    ]
+  },
+  {
+    "relation_type": "Product-Producer(e2,e1)",
+    "class_name": "ProductProducerE2E1",
+    "description": "One nominal is a product created, manufactured, or produced by the other. For this directed label, arg1 is e2 and arg2 is e1.",
+    "arg1_role": "e2",
+    "arg2_role": "e1",
+    "arg1_type": "NOMINAL",
+    "arg2_type": "NOMINAL",
+    "aliases": [
+      "Product Producer"
+    ]
+  }
+]
