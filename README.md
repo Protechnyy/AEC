@@ -123,6 +123,11 @@ The runner accepts JSON arrays, JSON objects with `data` / `records` /
 }
 ```
 
+For SemEval-2010 Task 8, `scripts/prepare_semeval2010_task8.py prepare`
+keeps the original `e1/e2` candidate pair as input, but converts gold labels
+such as `Product-Producer(e2,e1)` into semantic triples such as
+`{"subject": "product mention", "object": "producer mention", "relation": "Product-Producer"}`.
+
 ## Running
 
 Given-pair relation classification:
@@ -169,7 +174,7 @@ The built-in scorer reports:
 
 | Metric | Meaning |
 |---|---|
-| Argument Pair ID | F1 over `(subject, object)` pairs. |
+| Entity Pair Identification | F1 over `(subject, object)` entity pairs. |
 | Relation Classification | F1 over `(subject, object, relation)` triples. |
 
 The scorer is intentionally simple and sentence-level oriented.  Public DocRE

@@ -1,9 +1,9 @@
 [
   {
-    "relation_type": "Cause-Effect(e1,e2)",
-    "description": "One nominal causes, produces, generates, or leads to the other. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e1 and second argument is e2.",
-    "subject_role": "e1",
-    "object_role": "e2",
+    "relation_type": "Cause-Effect",
+    "description": "One nominal causes, produces, generates, or leads to the other. SemEval labels use e1/e2 only to mark the two mentions; this schema uses semantic triples where subject is the cause and object is the effect. If the official label is Relation(e2,e1), the output triple must swap the two mentions.",
+    "subject_role": "cause",
+    "object_role": "effect",
     "subject_type": "NOMINAL",
     "object_type": "NOMINAL",
     "aliases": [
@@ -11,21 +11,10 @@
     ]
   },
   {
-    "relation_type": "Cause-Effect(e2,e1)",
-    "description": "One nominal causes, produces, generates, or leads to the other. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e2 and second argument is e1.",
-    "subject_role": "e1",
-    "object_role": "e2",
-    "subject_type": "NOMINAL",
-    "object_type": "NOMINAL",
-    "aliases": [
-      "Cause Effect"
-    ]
-  },
-  {
-    "relation_type": "Component-Whole(e1,e2)",
-    "description": "One nominal is a component, part, member, or constituent of the other whole. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e1 and second argument is e2.",
-    "subject_role": "e1",
-    "object_role": "e2",
+    "relation_type": "Component-Whole",
+    "description": "One nominal is a component, part, member, or constituent of the other whole. SemEval labels use e1/e2 only to mark the two mentions; this schema uses semantic triples where subject is the component and object is the whole. If the official label is Relation(e2,e1), the output triple must swap the two mentions.",
+    "subject_role": "component",
+    "object_role": "whole",
     "subject_type": "NOMINAL",
     "object_type": "NOMINAL",
     "aliases": [
@@ -33,21 +22,10 @@
     ]
   },
   {
-    "relation_type": "Component-Whole(e2,e1)",
-    "description": "One nominal is a component, part, member, or constituent of the other whole. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e2 and second argument is e1.",
-    "subject_role": "e1",
-    "object_role": "e2",
-    "subject_type": "NOMINAL",
-    "object_type": "NOMINAL",
-    "aliases": [
-      "Component Whole"
-    ]
-  },
-  {
-    "relation_type": "Content-Container(e1,e2)",
-    "description": "One nominal is content located in or held by the other container. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e1 and second argument is e2.",
-    "subject_role": "e1",
-    "object_role": "e2",
+    "relation_type": "Content-Container",
+    "description": "One nominal is content located in or held by the other container. SemEval labels use e1/e2 only to mark the two mentions; this schema uses semantic triples where subject is the content and object is the container. If the official label is Relation(e2,e1), the output triple must swap the two mentions.",
+    "subject_role": "content",
+    "object_role": "container",
     "subject_type": "NOMINAL",
     "object_type": "NOMINAL",
     "aliases": [
@@ -55,21 +33,10 @@
     ]
   },
   {
-    "relation_type": "Content-Container(e2,e1)",
-    "description": "One nominal is content located in or held by the other container. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e2 and second argument is e1.",
-    "subject_role": "e1",
-    "object_role": "e2",
-    "subject_type": "NOMINAL",
-    "object_type": "NOMINAL",
-    "aliases": [
-      "Content Container"
-    ]
-  },
-  {
-    "relation_type": "Entity-Destination(e1,e2)",
-    "description": "One nominal moves, is sent, or is transferred to the other destination. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e1 and second argument is e2.",
-    "subject_role": "e1",
-    "object_role": "e2",
+    "relation_type": "Entity-Destination",
+    "description": "One nominal moves, is sent, or is transferred to the other destination. SemEval labels use e1/e2 only to mark the two mentions; this schema uses semantic triples where subject is the entity and object is the destination. If the official label is Relation(e2,e1), the output triple must swap the two mentions.",
+    "subject_role": "entity",
+    "object_role": "destination",
     "subject_type": "NOMINAL",
     "object_type": "NOMINAL",
     "aliases": [
@@ -77,21 +44,10 @@
     ]
   },
   {
-    "relation_type": "Entity-Destination(e2,e1)",
-    "description": "One nominal moves, is sent, or is transferred to the other destination. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e2 and second argument is e1.",
-    "subject_role": "e1",
-    "object_role": "e2",
-    "subject_type": "NOMINAL",
-    "object_type": "NOMINAL",
-    "aliases": [
-      "Entity Destination"
-    ]
-  },
-  {
-    "relation_type": "Entity-Origin(e1,e2)",
-    "description": "One nominal comes from, is derived from, or originates in the other. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e1 and second argument is e2.",
-    "subject_role": "e1",
-    "object_role": "e2",
+    "relation_type": "Entity-Origin",
+    "description": "One nominal comes from, is derived from, or originates in the other. SemEval labels use e1/e2 only to mark the two mentions; this schema uses semantic triples where subject is the entity and object is the origin. If the official label is Relation(e2,e1), the output triple must swap the two mentions.",
+    "subject_role": "entity",
+    "object_role": "origin",
     "subject_type": "NOMINAL",
     "object_type": "NOMINAL",
     "aliases": [
@@ -99,21 +55,10 @@
     ]
   },
   {
-    "relation_type": "Entity-Origin(e2,e1)",
-    "description": "One nominal comes from, is derived from, or originates in the other. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e2 and second argument is e1.",
-    "subject_role": "e1",
-    "object_role": "e2",
-    "subject_type": "NOMINAL",
-    "object_type": "NOMINAL",
-    "aliases": [
-      "Entity Origin"
-    ]
-  },
-  {
-    "relation_type": "Instrument-Agency(e1,e2)",
-    "description": "One nominal is an instrument, tool, or means used by the other agency. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e1 and second argument is e2.",
-    "subject_role": "e1",
-    "object_role": "e2",
+    "relation_type": "Instrument-Agency",
+    "description": "One nominal is an instrument, tool, or means used by the other agency. SemEval labels use e1/e2 only to mark the two mentions; this schema uses semantic triples where subject is the instrument and object is the agency. If the official label is Relation(e2,e1), the output triple must swap the two mentions.",
+    "subject_role": "instrument",
+    "object_role": "agency",
     "subject_type": "NOMINAL",
     "object_type": "NOMINAL",
     "aliases": [
@@ -121,21 +66,10 @@
     ]
   },
   {
-    "relation_type": "Instrument-Agency(e2,e1)",
-    "description": "One nominal is an instrument, tool, or means used by the other agency. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e2 and second argument is e1.",
-    "subject_role": "e1",
-    "object_role": "e2",
-    "subject_type": "NOMINAL",
-    "object_type": "NOMINAL",
-    "aliases": [
-      "Instrument Agency"
-    ]
-  },
-  {
-    "relation_type": "Member-Collection(e1,e2)",
-    "description": "One nominal is a member, element, or item in the other collection. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e1 and second argument is e2.",
-    "subject_role": "e1",
-    "object_role": "e2",
+    "relation_type": "Member-Collection",
+    "description": "One nominal is a member, element, or item in the other collection. SemEval labels use e1/e2 only to mark the two mentions; this schema uses semantic triples where subject is the member and object is the collection. If the official label is Relation(e2,e1), the output triple must swap the two mentions.",
+    "subject_role": "member",
+    "object_role": "collection",
     "subject_type": "NOMINAL",
     "object_type": "NOMINAL",
     "aliases": [
@@ -143,21 +77,10 @@
     ]
   },
   {
-    "relation_type": "Member-Collection(e2,e1)",
-    "description": "One nominal is a member, element, or item in the other collection. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e2 and second argument is e1.",
-    "subject_role": "e1",
-    "object_role": "e2",
-    "subject_type": "NOMINAL",
-    "object_type": "NOMINAL",
-    "aliases": [
-      "Member Collection"
-    ]
-  },
-  {
-    "relation_type": "Message-Topic(e1,e2)",
-    "description": "One nominal is a message, statement, or communication about the other topic. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e1 and second argument is e2.",
-    "subject_role": "e1",
-    "object_role": "e2",
+    "relation_type": "Message-Topic",
+    "description": "One nominal is a message, statement, or communication about the other topic. SemEval labels use e1/e2 only to mark the two mentions; this schema uses semantic triples where subject is the message and object is the topic. If the official label is Relation(e2,e1), the output triple must swap the two mentions.",
+    "subject_role": "message",
+    "object_role": "topic",
     "subject_type": "NOMINAL",
     "object_type": "NOMINAL",
     "aliases": [
@@ -165,32 +88,10 @@
     ]
   },
   {
-    "relation_type": "Message-Topic(e2,e1)",
-    "description": "One nominal is a message, statement, or communication about the other topic. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e2 and second argument is e1.",
-    "subject_role": "e1",
-    "object_role": "e2",
-    "subject_type": "NOMINAL",
-    "object_type": "NOMINAL",
-    "aliases": [
-      "Message Topic"
-    ]
-  },
-  {
-    "relation_type": "Product-Producer(e1,e2)",
-    "description": "One nominal is a product created, manufactured, or produced by the other. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e1 and second argument is e2.",
-    "subject_role": "e1",
-    "object_role": "e2",
-    "subject_type": "NOMINAL",
-    "object_type": "NOMINAL",
-    "aliases": [
-      "Product Producer"
-    ]
-  },
-  {
-    "relation_type": "Product-Producer(e2,e1)",
-    "description": "One nominal is a product created, manufactured, or produced by the other. SemEval examples are classified over the fixed candidate pair subject=e1 and object=e2; this directed label means the base relation's first argument is e2 and second argument is e1.",
-    "subject_role": "e1",
-    "object_role": "e2",
+    "relation_type": "Product-Producer",
+    "description": "One nominal is a product created, manufactured, or produced by the other. SemEval labels use e1/e2 only to mark the two mentions; this schema uses semantic triples where subject is the product and object is the producer. If the official label is Relation(e2,e1), the output triple must swap the two mentions.",
+    "subject_role": "product",
+    "object_role": "producer",
     "subject_type": "NOMINAL",
     "object_type": "NOMINAL",
     "aliases": [

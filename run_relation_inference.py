@@ -582,7 +582,9 @@ def run_relation_classification_pipeline(
         candidate_pair=candidate_pair,
         model=model,
     )
-    if hyp is None or is_no_relation(hyp.relation):
+    if hyp is None:
+        return "[]", False
+    if is_no_relation(hyp.relation):
         return "[]", True
 
     schema = schema_by_type.get(hyp.relation)
@@ -590,7 +592,28 @@ def run_relation_classification_pipeline(
         return "[]", False
 
     schema_def = build_relation_definition(schema, include_base=True)
-    patch_feedback: Optional[str] = None
+    allowed_pairs = [candidate_pair, (candidate_pair[1], candidate_pair[0])]
+    direct_code = serialize_triples(
+        [
+            {
+                "subject": hyp.subject,
+                "object": hyp.object,
+                "relation": schema.relation_type,
+            }
+        ]
+    )
+    try:
+        verifier.verify_code(
+            direct_code,
+            text,
+            schemas,
+            expected_relation=schema.relation_type,
+            allowed_pairs=allowed_pairs,
+        )
+        return postprocess_relation_prediction(direct_code, text), True
+    except RelationVerificationError as exc:
+        patch_feedback: Optional[str] = str(exc)
+
     for _attempt in range(1, t + 1):
         code_str = coder.generate_code(
             hypothesis=hyp,
@@ -606,7 +629,7 @@ def run_relation_classification_pipeline(
                 text,
                 schemas,
                 expected_relation=schema.relation_type,
-                allowed_pairs=[candidate_pair],
+                allowed_pairs=allowed_pairs,
             )
             return postprocess_relation_prediction(code_str, text), True
         except RelationVerificationError as exc:
@@ -645,16 +668,16 @@ def evaluate_predictions(
     rel_scores = compute_f1(rel_pred_num, rel_gold_num, rel_match_num)
 
     table = PrettyTable()
-    table.field_names = ["Metric", "Argument Pair ID", "Relation Classification"]
+    table.field_names = ["Metric", "Entity Pair Identification", "Relation Classification"]
     table.add_row(["Micro Precision", f"{pair_scores['precision'] * 100:.2f}", f"{rel_scores['precision'] * 100:.2f}"])
     table.add_row(["Micro Recall", f"{pair_scores['recall'] * 100:.2f}", f"{rel_scores['recall'] * 100:.2f}"])
     table.add_row(["Micro F1", f"{pair_scores['f1'] * 100:.2f}", f"{rel_scores['f1'] * 100:.2f}"])
     print(table)
 
     return {
-        "pair_id_precision": pair_scores["precision"],
-        "pair_id_recall": pair_scores["recall"],
-        "pair_id_f1": pair_scores["f1"],
+        "entity_pair_precision": pair_scores["precision"],
+        "entity_pair_recall": pair_scores["recall"],
+        "entity_pair_f1": pair_scores["f1"],
         "relation_cls_precision": rel_scores["precision"],
         "relation_cls_recall": rel_scores["recall"],
         "relation_cls_f1": rel_scores["f1"],

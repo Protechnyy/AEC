@@ -218,19 +218,23 @@ class RelationPlanningAgent:
     ) -> Optional[RelationHypothesis]:
         """Choose one relation label or Other for a given subject/object pair."""
 
-        subject, obj = candidate_pair
+        entity_1, entity_2 = candidate_pair
         system = (
             "You are a planning agent for relation classification. Given text, "
-            "relation schemas, and one candidate subject/object pair, choose exactly "
-            "one relation label from the schemas, or output Other if no listed "
-            "relation is expressed. The subject/object order is fixed."
+            "relation schemas, and one candidate entity pair, choose exactly one "
+            "relation label from the schemas, or output Other if no listed relation "
+            "is expressed. For directed relations, also choose the correct subject "
+            "and object orientation. The subject and object must be exactly the two "
+            "provided entity mentions."
         )
         user = (
             f"Relation schemas:\n{schema_definitions}\n\n"
             f"Text:\n{text}\n\n"
-            f"Candidate pair:\nsubject = {subject!r}\nobject = {obj!r}\n\n"
-            "Return only a JSON object with keys: relation, confidence, rationale. "
-            "relation must be one schema relation label or exactly Other."
+            f"Candidate entity pair:\nentity_1 = {entity_1!r}\nentity_2 = {entity_2!r}\n\n"
+            "Return only a JSON object with keys: subject, object, relation, "
+            "confidence, rationale. If relation is not Other, subject and object "
+            "must be entity_1/entity_2 in the semantically correct order. relation "
+            "must be one schema relation label or exactly Other."
         )
         try:
             raw = call_llm(
@@ -248,9 +252,13 @@ class RelationPlanningAgent:
         if not isinstance(data, dict):
             return None
         relation = str(data.get("relation") or data.get("relation_type") or "Other")
+        subject = data.get("subject") or data.get("arg1") or data.get("head") or entity_1
+        obj = data.get("object") or data.get("arg2") or data.get("tail") or entity_2
+        if subject not in candidate_pair or obj not in candidate_pair or subject == obj:
+            subject, obj = entity_1, entity_2
         return RelationHypothesis(
-            subject=subject,
-            object=obj,
+            subject=str(subject),
+            object=str(obj),
             relation=relation,
             confidence=_safe_float(data.get("confidence", 0.5)),
             rationale=str(data.get("rationale", "")),

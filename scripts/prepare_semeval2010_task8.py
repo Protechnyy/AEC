@@ -33,6 +33,22 @@ RELATION_DESCRIPTIONS = {
     "Product-Producer": "One nominal is a product created, manufactured, or produced by the other.",
 }
 
+RELATION_ROLES = {
+    "Cause-Effect": ("cause", "effect"),
+    "Component-Whole": ("component", "whole"),
+    "Content-Container": ("content", "container"),
+    "Entity-Destination": ("entity", "destination"),
+    "Entity-Origin": ("entity", "origin"),
+    "Instrument-Agency": ("instrument", "agency"),
+    "Member-Collection": ("member", "collection"),
+    "Message-Topic": ("message", "topic"),
+    "Product-Producer": ("product", "producer"),
+}
+
+
+def base_relation(label: str) -> str:
+    return label.split("(", 1)[0]
+
 
 def parse_sentence_line(line: str) -> Tuple[str, str, str, str]:
     sent_id, tagged = line.rstrip("\n").split("\t", 1)
@@ -78,11 +94,15 @@ def convert_split(sent_path: Path, label_path: Path, out_path: Path) -> None:
                 "semeval_label": label,
             }
             if label != "Other":
+                relation = base_relation(label)
+                source, target = relation_direction(label)
+                mentions = {"e1": e1, "e2": e2}
                 record["relation_mentions"].append(
                     {
-                        "relation": label,
-                        "subject": {"text": e1},
-                        "object": {"text": e2},
+                        "relation": relation,
+                        "subject": {"text": mentions[source]},
+                        "object": {"text": mentions[target]},
+                        "semeval_label": label,
                     }
                 )
             out.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -97,25 +117,25 @@ def relation_direction(label: str) -> Tuple[str, str]:
 
 
 def create_schema(train_labels: Iterable[str], test_labels: Iterable[str], out_path: Path) -> None:
-    relation_labels = sorted({label for label in list(train_labels) + list(test_labels) if label != "Other"})
+    relation_labels = sorted({base_relation(label) for label in list(train_labels) + list(test_labels) if label != "Other"})
     schemas: List[dict] = []
-    for label in relation_labels:
-        base = label.split("(", 1)[0]
-        source, target = relation_direction(label)
+    for relation in relation_labels:
+        subject_role, object_role = RELATION_ROLES.get(relation, ("subject", "object"))
         schemas.append(
             {
-                "relation_type": label,
+                "relation_type": relation,
                 "description": (
-                    f"{RELATION_DESCRIPTIONS.get(base, 'A semantic relation between two nominals')} "
-                    "SemEval examples are classified over the fixed candidate pair "
-                    "subject=e1 and object=e2; this directed label means the base "
-                    f"relation's first argument is {source} and second argument is {target}."
+                    f"{RELATION_DESCRIPTIONS.get(relation, 'A semantic relation between two nominals')} "
+                    "SemEval labels use e1/e2 only to mark the two mentions; this "
+                    f"schema uses semantic triples where subject is the {subject_role} "
+                    f"and object is the {object_role}. If the official label is "
+                    "Relation(e2,e1), the output triple must swap the two mentions."
                 ),
-                "subject_role": "e1",
-                "object_role": "e2",
+                "subject_role": subject_role,
+                "object_role": object_role,
                 "subject_type": "NOMINAL",
                 "object_type": "NOMINAL",
-                "aliases": [base.replace("-", " ")],
+                "aliases": [relation.replace("-", " ")],
             }
         )
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,10 +178,23 @@ def export_official(args: argparse.Namespace) -> None:
         for record in records:
             triples, _ = safe_parse_triples(record.get("Prediction", "[]"))
             label = "Other"
+            pair = None
+            raw_pairs = record.get("candidate_pairs")
+            if isinstance(raw_pairs, list) and raw_pairs:
+                first = raw_pairs[0]
+                if isinstance(first, list) and len(first) >= 2:
+                    pair = (str(first[0]), str(first[1]))
             for triple in triples:
                 relation = str(triple.get("relation", ""))
                 if relation in schema_by_type:
-                    label = relation
+                    subject = str(triple.get("subject", ""))
+                    obj = str(triple.get("object", ""))
+                    if pair and (subject, obj) == pair:
+                        label = f"{relation}(e1,e2)"
+                    elif pair and (subject, obj) == (pair[1], pair[0]):
+                        label = f"{relation}(e2,e1)"
+                    else:
+                        label = relation
                     break
             out.write(f"{record.get('doc_id')}\t{label}\n")
     print(f"Wrote {out_path}")

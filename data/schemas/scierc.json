@@ -1,0 +1,97 @@
+[
+  {
+    "subject_type": "SCIENTIFIC_ENTITY",
+    "object_type": "SCIENTIFIC_ENTITY",
+    "relation_type": "USED-FOR",
+    "description": "The subject scientific entity is used for, applied to, or intended to solve the object task, process, application, or goal.",
+    "subject_role": "tool_or_entity",
+    "object_role": "purpose_or_task",
+    "aliases": [
+      "used for",
+      "applied to",
+      "for"
+    ]
+  },
+  {
+    "subject_type": "SCIENTIFIC_ENTITY",
+    "object_type": "SCIENTIFIC_ENTITY",
+    "relation_type": "FEATURE-OF",
+    "description": "The subject is a feature, property, characteristic, constraint, or aspect of the object scientific entity.",
+    "subject_role": "feature",
+    "object_role": "entity",
+    "aliases": [
+      "feature of",
+      "property of",
+      "aspect of"
+    ]
+  },
+  {
+    "subject_type": "SCIENTIFIC_ENTITY",
+    "object_type": "SCIENTIFIC_ENTITY",
+    "relation_type": "PART-OF",
+    "description": "The subject is a component, part, stage, element, or substructure of the object scientific entity.",
+    "subject_role": "part",
+    "object_role": "whole",
+    "aliases": [
+      "part of",
+      "component of",
+      "element of"
+    ]
+  },
+  {
+    "subject_type": "SCIENTIFIC_ENTITY",
+    "object_type": "SCIENTIFIC_ENTITY",
+    "relation_type": "HYPONYM-OF",
+    "description": "The subject is a more specific kind, example, instance, subtype, or member of the broader object category.",
+    "subject_role": "specific_entity",
+    "object_role": "general_category",
+    "aliases": [
+      "type of",
+      "kind of",
+      "such as",
+      "instance of"
+    ]
+  },
+  {
+    "subject_type": "SCIENTIFIC_ENTITY",
+    "object_type": "SCIENTIFIC_ENTITY",
+    "relation_type": "EVALUATE-FOR",
+    "description": "The subject is a metric, criterion, evaluation aspect, quality, or measured result used to evaluate the object method, system, task, or entity.",
+    "subject_role": "metric_or_criterion",
+    "object_role": "evaluated_entity",
+    "aliases": [
+      "evaluate for",
+      "measured for",
+      "performance on"
+    ]
+  },
+  {
+    "subject_type": "SCIENTIFIC_ENTITY",
+    "object_type": "SCIENTIFIC_ENTITY",
+    "relation_type": "CONJUNCTION",
+    "description": "The two entities are coordinated conjuncts or parallel items that play the same role in the sentence.",
+    "subject_role": "conjunct",
+    "object_role": "conjunct",
+    "aliases": [
+      "and",
+      "or",
+      "as well as"
+    ],
+    "symmetric": true
+  },
+  {
+    "subject_type": "SCIENTIFIC_ENTITY",
+    "object_type": "SCIENTIFIC_ENTITY",
+    "relation_type": "COMPARE",
+    "description": "The two entities are explicitly compared, contrasted, or evaluated against one another.",
+    "subject_role": "compared_entity",
+    "object_role": "comparison_target",
+    "aliases": [
+      "compare",
+      "outperform",
+      "better than",
+      "versus"
+    ],
+    "symmetric": true
+  }
+]
