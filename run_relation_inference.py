@@ -204,6 +204,28 @@ def _subject_object_pair(sample: Mapping[str, Any]) -> Optional[Tuple[str, str]]
     return None
 
 
+def _entity_type(value: Any) -> str:
+    if not isinstance(value, Mapping):
+        return ""
+    entity_type = _first_present(value, ("type", "entity_type", "label", "ner", "category"))
+    return str(entity_type) if entity_type is not None else ""
+
+
+def _subject_object_pair_metadata(sample: Mapping[str, Any]) -> Optional[dict]:
+    pair = _subject_object_pair(sample)
+    if not pair:
+        return None
+    subj = _first_present(sample, ("subj", "subject", "head", "h", "arg1", "e1"))
+    obj = _first_present(sample, ("obj", "object", "tail", "t", "arg2", "e2"))
+    return {
+        "pair": [pair[0], pair[1]],
+        "entity_1": pair[0],
+        "entity_2": pair[1],
+        "entity_1_type": _entity_type(subj),
+        "entity_2_type": _entity_type(obj),
+    }
+
+
 def _normalise_pair_item(item: Any, sample: Mapping[str, Any]) -> Optional[Tuple[str, str]]:
     if isinstance(item, (list, tuple)) and len(item) >= 2:
         arg1 = span_text(item[0], sample)
@@ -216,25 +238,53 @@ def _normalise_pair_item(item: Any, sample: Mapping[str, Any]) -> Optional[Tuple
     return (arg1, arg2) if arg1 and arg2 else None
 
 
-def _extract_candidate_pairs(sample: Mapping[str, Any]) -> List[Tuple[str, str]]:
-    pairs: List[Tuple[str, str]] = []
+def _normalise_pair_item_with_metadata(item: Any, sample: Mapping[str, Any]) -> Optional[dict]:
+    if isinstance(item, (list, tuple)) and len(item) >= 2:
+        left = item[0]
+        right = item[1]
+    elif isinstance(item, Mapping):
+        left = _first_present(item, ("arg1", "subject", "head", "subj", "e1"))
+        right = _first_present(item, ("arg2", "object", "tail", "obj", "e2"))
+    else:
+        return None
+
+    arg1 = span_text(left, sample)
+    arg2 = span_text(right, sample)
+    if not arg1 or not arg2:
+        return None
+    return {
+        "pair": [arg1, arg2],
+        "entity_1": arg1,
+        "entity_2": arg2,
+        "entity_1_type": _entity_type(left),
+        "entity_2_type": _entity_type(right),
+    }
+
+
+def _extract_candidate_pair_details(sample: Mapping[str, Any]) -> List[dict]:
+    pair_details: List[dict] = []
     raw_pairs = _first_present(sample, ("candidate_pairs", "pairs", "entity_pairs"))
     if isinstance(raw_pairs, list):
         for item in raw_pairs:
-            pair = _normalise_pair_item(item, sample)
-            if pair:
-                pairs.append(pair)
-    pair = _subject_object_pair(sample)
-    if pair:
-        pairs.append(pair)
+            detail = _normalise_pair_item_with_metadata(item, sample)
+            if detail:
+                pair_details.append(detail)
+    subject_object_detail = _subject_object_pair_metadata(sample)
+    if subject_object_detail:
+        pair_details.append(subject_object_detail)
 
-    deduped: List[Tuple[str, str]] = []
+    deduped: List[dict] = []
     seen: set[Tuple[str, str]] = set()
-    for pair in pairs:
+    for detail in pair_details:
+        pair = tuple(detail["pair"])
         if pair not in seen:
             seen.add(pair)
-            deduped.append(pair)
+            deduped.append(detail)
     return deduped
+
+
+def _extract_candidate_pairs(sample: Mapping[str, Any]) -> List[Tuple[str, str]]:
+    return [tuple(detail["pair"]) for detail in _extract_candidate_pair_details(sample)]
 
 
 def normalise_relation_item(item: Mapping[str, Any], sample: Mapping[str, Any]) -> Optional[dict]:
@@ -296,11 +346,13 @@ def normalise_sample(sample: Mapping[str, Any]) -> dict:
                 }
             )
 
-    candidate_pairs = _extract_candidate_pairs(sample)
+    candidate_pair_metadata = _extract_candidate_pair_details(sample)
+    candidate_pairs = [tuple(detail["pair"]) for detail in candidate_pair_metadata]
     return {
         "text": text,
         "relation_mentions": relation_mentions,
         "candidate_pairs": candidate_pairs,
+        "candidate_pair_metadata": candidate_pair_metadata,
         "has_relation_annotation": has_relation_annotation,
         "doc_id": sample.get("id") or sample.get("doc_id") or sample.get("guid") or sample.get("uid") or "",
         "raw": sample,
@@ -564,32 +616,62 @@ def run_relation_classification_pipeline(
     candidate_pair: Tuple[str, str],
     model: str,
     t: int = 3,
+    candidate_pair_metadata: Optional[Mapping[str, Any]] = None,
+    min_relation_confidence: float = 0.0,
     planner: Optional[RelationPlanningAgent] = None,
     coder: Optional[RelationCodingAgent] = None,
     verifier: Optional[RelationVerificationAgent] = None,
-) -> Tuple[str, bool]:
+) -> Tuple[str, bool, Dict[str, Any]]:
     """Classify one candidate pair against all relation schemas in one call."""
 
     planner = planner or RelationPlanningAgent()
     coder = coder or RelationCodingAgent()
     verifier = verifier or RelationVerificationAgent()
     schema_by_type = schemas_by_relation_type(schemas)
+    decision: Dict[str, Any] = {
+        "candidate_pair": [candidate_pair[0], candidate_pair[1]],
+        "relation": "Other",
+        "confidence": 0.0,
+        "success": False,
+        "prediction": "[]",
+    }
+    if candidate_pair_metadata:
+        decision["entity_1_type"] = candidate_pair_metadata.get("entity_1_type", "")
+        decision["entity_2_type"] = candidate_pair_metadata.get("entity_2_type", "")
 
     definitions = build_relation_definitions(schemas)
     hyp = planner.classify_pair(
         text=text,
         schema_definitions=definitions,
         candidate_pair=candidate_pair,
+        candidate_pair_metadata=candidate_pair_metadata,
         model=model,
     )
     if hyp is None:
-        return "[]", False
+        decision["error"] = "planner returned no parseable decision"
+        return "[]", False, decision
+    decision.update(
+        {
+            "subject": hyp.subject,
+            "object": hyp.object,
+            "relation": hyp.relation,
+            "confidence": hyp.confidence,
+            "rationale": hyp.rationale,
+        }
+    )
     if is_no_relation(hyp.relation):
-        return "[]", True
+        decision["success"] = True
+        return "[]", True, decision
+    if hyp.confidence < min_relation_confidence:
+        decision["filtered"] = f"confidence below {min_relation_confidence:.2f}"
+        decision["relation"] = "Other"
+        decision["success"] = True
+        return "[]", True, decision
 
     schema = schema_by_type.get(hyp.relation)
     if not schema:
-        return "[]", False
+        decision["error"] = f"unknown relation label: {hyp.relation}"
+        return "[]", False, decision
 
     schema_def = build_relation_definition(schema, include_base=True)
     allowed_pairs = [candidate_pair, (candidate_pair[1], candidate_pair[0])]
@@ -610,9 +692,13 @@ def run_relation_classification_pipeline(
             expected_relation=schema.relation_type,
             allowed_pairs=allowed_pairs,
         )
-        return postprocess_relation_prediction(direct_code, text), True
+        prediction = postprocess_relation_prediction(direct_code, text)
+        decision["prediction"] = prediction
+        decision["success"] = True
+        return prediction, True, decision
     except RelationVerificationError as exc:
         patch_feedback: Optional[str] = str(exc)
+        decision["verification_error"] = patch_feedback
 
     for _attempt in range(1, t + 1):
         code_str = coder.generate_code(
@@ -631,10 +717,54 @@ def run_relation_classification_pipeline(
                 expected_relation=schema.relation_type,
                 allowed_pairs=allowed_pairs,
             )
-            return postprocess_relation_prediction(code_str, text), True
+            prediction = postprocess_relation_prediction(code_str, text)
+            decision["prediction"] = prediction
+            decision["success"] = True
+            return prediction, True, decision
         except RelationVerificationError as exc:
             patch_feedback = str(exc)
-    return "[]", False
+            decision["verification_error"] = patch_feedback
+    return "[]", False, decision
+
+
+def run_sentence_given_pairs_pipeline(
+    text: str,
+    schemas: Sequence[RelationSchema],
+    candidate_pairs: Sequence[Tuple[str, str]],
+    model: str,
+    candidate_pair_metadata: Optional[Sequence[Mapping[str, Any]]] = None,
+    planner: Optional[RelationPlanningAgent] = None,
+    verifier: Optional[RelationVerificationAgent] = None,
+) -> Tuple[str, bool]:
+    """Extract all triples in a sentence while constraining spans to candidate pairs."""
+
+    planner = planner or RelationPlanningAgent()
+    verifier = verifier or RelationVerificationAgent()
+    definitions = build_relation_definitions(schemas)
+    raw_prediction = planner.extract_from_candidate_pairs(
+        text=text,
+        schema_definitions=definitions,
+        candidate_pairs=candidate_pairs,
+        candidate_pair_metadata=candidate_pair_metadata,
+        model=model,
+    )
+    triples, parse_errors = safe_parse_triples(raw_prediction)
+    if parse_errors:
+        return "[]", False
+    if not triples:
+        return "[]", True
+
+    allowed_pairs: List[Tuple[str, str]] = []
+    for pair in candidate_pairs:
+        allowed_pairs.append(pair)
+        allowed_pairs.append((pair[1], pair[0]))
+
+    code = serialize_triples(triples)
+    try:
+        verifier.verify_code(code, text, schemas, allowed_pairs=allowed_pairs)
+    except RelationVerificationError:
+        return "[]", False
+    return postprocess_relation_prediction(code, text), True
 
 
 def evaluate_predictions(
@@ -709,11 +839,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base_url", default=None, help="OpenAI-compatible local server URL, e.g. vLLM.")
     parser.add_argument("--k", type=int, default=3, help="Planning hypotheses per relation type.")
     parser.add_argument("--t", type=int, default=3, help="Patch attempts per hypothesis.")
-    parser.add_argument("--mode", choices=["auto", "end_to_end", "given_pairs"], default="auto")
+    parser.add_argument(
+        "--mode",
+        choices=["auto", "end_to_end", "given_pairs", "given_pairs_sentence"],
+        default="auto",
+    )
     parser.add_argument("--relation_types", default=None, help="Comma-separated subset of relation labels to run.")
     parser.add_argument("--max_samples", type=int, default=None, help="Limit number of samples.")
     parser.add_argument("--sample_seed", type=int, default=None, help="Randomly sample with this seed when limiting.")
     parser.add_argument("--output", default=None, help="Output predictions JSON path.")
+    parser.add_argument(
+        "--min_relation_confidence",
+        type=float,
+        default=0.0,
+        help="Drop positive pair classifications below this planner confidence.",
+    )
+    parser.add_argument(
+        "--store_pair_decisions",
+        action="store_true",
+        help="Store per-candidate-pair relation decisions in the output JSON.",
+    )
     parser.add_argument("--delay", type=float, default=0.0, help="Sleep between relation-type calls.")
     parser.add_argument("--resume", action="store_true", help="Resume from an existing output file.")
     parser.add_argument("--no_eval", action="store_true", help="Skip evaluation after inference.")
@@ -778,7 +923,6 @@ def main() -> None:
         sys.exit(1)
 
     schema_by_type = schemas_by_relation_type(schemas)
-
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     data_tag = re.sub(r"[^A-Za-z0-9_-]", "_", Path(args.data).stem)
     model_tag = re.sub(r"[^A-Za-z0-9_-]", "_", args.model)
@@ -805,19 +949,44 @@ def main() -> None:
 
         text = sample["text"]
         sample_predictions: List[str] = []
-        if args.mode == "given_pairs" or (args.mode == "auto" and sample["candidate_pairs"]):
+        pair_decisions: List[dict] = []
+        if args.mode == "given_pairs_sentence":
+            attempted_count += 1
+            pred_code, success = run_sentence_given_pairs_pipeline(
+                text=text,
+                schemas=schemas,
+                candidate_pairs=sample["candidate_pairs"],
+                candidate_pair_metadata=sample.get("candidate_pair_metadata", []),
+                model=args.model,
+                planner=planner,
+                verifier=verifier,
+            )
+            if success:
+                success_count += 1
+                sample_predictions.append(pred_code)
+            if args.delay > 0:
+                time.sleep(args.delay)
+        elif args.mode == "given_pairs" or (args.mode == "auto" and sample["candidate_pairs"]):
+            pair_metadata_by_key = {
+                tuple(detail["pair"]): detail
+                for detail in sample.get("candidate_pair_metadata", [])
+                if isinstance(detail, Mapping) and isinstance(detail.get("pair"), list)
+            }
             for pair in sample["candidate_pairs"]:
                 attempted_count += 1
-                pred_code, success = run_relation_classification_pipeline(
+                pred_code, success, decision = run_relation_classification_pipeline(
                     text=text,
                     schemas=schemas,
                     candidate_pair=pair,
                     model=args.model,
                     t=args.t,
+                    candidate_pair_metadata=pair_metadata_by_key.get(pair),
+                    min_relation_confidence=args.min_relation_confidence,
                     planner=planner,
                     coder=coder,
                     verifier=verifier,
                 )
+                pair_decisions.append(decision)
                 if success:
                     success_count += 1
                     sample_predictions.append(pred_code)
@@ -846,17 +1015,18 @@ def main() -> None:
 
         combined_prediction = merge_prediction_strings(sample_predictions, schema_by_type)
         gold_label = build_gold_label(sample["relation_mentions"], schema_by_type)
-        predictions.append(
-            {
-                "Input": text,
-                "Prediction": combined_prediction,
-                "Label": gold_label,
-                "task_type": "RE",
-                "doc_id": sample["doc_id"],
-                "candidate_pairs": sample["candidate_pairs"],
-                "has_relation_annotation": sample["has_relation_annotation"],
-            }
-        )
+        record = {
+            "Input": text,
+            "Prediction": combined_prediction,
+            "Label": gold_label,
+            "task_type": "RE",
+            "doc_id": sample["doc_id"],
+            "candidate_pairs": sample["candidate_pairs"],
+            "has_relation_annotation": sample["has_relation_annotation"],
+        }
+        if args.store_pair_decisions:
+            record["pair_decisions"] = pair_decisions
+        predictions.append(record)
 
         if len(predictions) % 10 == 0:
             with open(output_path, "w", encoding="utf-8") as fh:

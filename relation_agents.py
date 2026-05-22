@@ -24,6 +24,20 @@ def _safe_float(value: Any, default: float = 0.5) -> float:
         return default
 
 
+def _safe_bool(value: Any, default: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalised = value.strip().lower()
+        if normalised in {"true", "yes", "y", "1"}:
+            return True
+        if normalised in {"false", "no", "n", "0"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
 def _strip_json_fence(raw: str) -> str:
     raw = raw.strip()
     raw = re.sub(r"^```(?:json|python)?\s*", "", raw, flags=re.IGNORECASE)
@@ -214,27 +228,49 @@ class RelationPlanningAgent:
         text: str,
         schema_definitions: str,
         candidate_pair: Tuple[str, str],
+        candidate_pair_metadata: Optional[Mapping[str, Any]] = None,
         model: str = "gpt-4o",
     ) -> Optional[RelationHypothesis]:
         """Choose one relation label or Other for a given subject/object pair."""
 
         entity_1, entity_2 = candidate_pair
+        metadata_block = ""
+        if candidate_pair_metadata:
+            entity_1_type = candidate_pair_metadata.get("entity_1_type") or "unknown"
+            entity_2_type = candidate_pair_metadata.get("entity_2_type") or "unknown"
+            metadata_block = (
+                "\nCandidate entity metadata:\n"
+                f"entity_1_type = {entity_1_type!r}\n"
+                f"entity_2_type = {entity_2_type!r}\n"
+            )
         system = (
-            "You are a planning agent for relation classification. Given text, "
-            "relation schemas, and one candidate entity pair, choose exactly one "
-            "relation label from the schemas, or output Other if no listed relation "
-            "is expressed. For directed relations, also choose the correct subject "
-            "and object orientation. The subject and object must be exactly the two "
-            "provided entity mentions."
+            "You are a conservative relation classification agent. Given text, "
+            "relation schemas, and one candidate entity pair, first decide whether "
+            "the sentence explicitly states a listed relation between exactly these "
+            "two mentions. Default to Other. Do not treat topical relatedness, "
+            "co-occurrence, shared domain, or a weak association as a relation. If "
+            "the evidence is ambiguous, missing, or only supports a relation with "
+            "a different entity, output Other. For directed relations, choose the "
+            "correct semantic subject/object orientation only after deciding that "
+            "a listed relation is explicitly expressed."
         )
         user = (
             f"Relation schemas:\n{schema_definitions}\n\n"
             f"Text:\n{text}\n\n"
             f"Candidate entity pair:\nentity_1 = {entity_1!r}\nentity_2 = {entity_2!r}\n\n"
-            "Return only a JSON object with keys: subject, object, relation, "
-            "confidence, rationale. If relation is not Other, subject and object "
-            "must be entity_1/entity_2 in the semantically correct order. relation "
-            "must be one schema relation label or exactly Other."
+            f"{metadata_block}"
+            "Return only a JSON object with keys: is_relation, subject, object, "
+            "relation, evidence, confidence, rationale.\n"
+            "- is_relation must be true only when explicit evidence connects "
+            "entity_1 and entity_2 under one listed schema.\n"
+            "- If is_relation is false, set relation to exactly Other and keep "
+            "subject/entity_1 and object/entity_2.\n"
+            "- If is_relation is true, subject and object must be entity_1/entity_2 "
+            "in the semantically correct order.\n"
+            "- relation must be one schema relation label or exactly Other.\n"
+            "- evidence must be a short copied phrase from the text, or empty for Other.\n"
+            "- confidence must be a number from 0.0 to 1.0 and should be below 0.6 "
+            "when the evidence is indirect or uncertain."
         )
         try:
             raw = call_llm(
@@ -252,6 +288,8 @@ class RelationPlanningAgent:
         if not isinstance(data, dict):
             return None
         relation = str(data.get("relation") or data.get("relation_type") or "Other")
+        if not _safe_bool(data.get("is_relation"), default=not relation.strip().lower() == "other"):
+            relation = "Other"
         subject = data.get("subject") or data.get("arg1") or data.get("head") or entity_1
         obj = data.get("object") or data.get("arg2") or data.get("tail") or entity_2
         if subject not in candidate_pair or obj not in candidate_pair or subject == obj:
@@ -263,6 +301,58 @@ class RelationPlanningAgent:
             confidence=_safe_float(data.get("confidence", 0.5)),
             rationale=str(data.get("rationale", "")),
         )
+
+    def extract_from_candidate_pairs(
+        self,
+        text: str,
+        schema_definitions: str,
+        candidate_pairs: Sequence[Tuple[str, str]],
+        candidate_pair_metadata: Optional[Sequence[Mapping[str, Any]]] = None,
+        model: str = "gpt-4o",
+    ) -> str:
+        """Extract all relation triples among the provided candidate pairs."""
+
+        metadata_by_pair = {
+            tuple(item.get("pair", [])): item
+            for item in candidate_pair_metadata or []
+            if isinstance(item, Mapping)
+        }
+        rendered_pairs: List[str] = []
+        for idx, pair in enumerate(candidate_pairs, start=1):
+            metadata = metadata_by_pair.get(tuple(pair), {})
+            type_1 = metadata.get("entity_1_type") or "unknown"
+            type_2 = metadata.get("entity_2_type") or "unknown"
+            rendered_pairs.append(
+                f"{idx}. entity_1={pair[0]!r} (type={type_1}), "
+                f"entity_2={pair[1]!r} (type={type_2})"
+            )
+
+        system = (
+            "You are a conservative relation extraction agent. Given one sentence, "
+            "relation schemas, and candidate entity pairs, output only the relation "
+            "triples that are explicitly stated in the sentence. Most candidate "
+            "pairs may have no relation. Do not infer from co-occurrence, topical "
+            "relatedness, or broad scientific association. For directed relations, "
+            "use the semantic subject/object orientation required by the schema."
+        )
+        user = (
+            f"Relation schemas:\n{schema_definitions}\n\n"
+            f"Text:\n{text}\n\n"
+            "Candidate pairs. You may only use these exact mention strings, in either "
+            "semantic orientation when the relation is directed:\n"
+            + "\n".join(rendered_pairs)
+            + "\n\nReturn only a JSON array. Each item must contain exactly: "
+            "subject, object, relation. If no listed relation is explicitly "
+            "expressed for any candidate pair, return []."
+        )
+        raw = call_llm(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            model=model,
+        )
+        return _extract_json_array(raw)
 
 
 @dataclass
