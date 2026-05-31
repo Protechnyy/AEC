@@ -1,0 +1,13 @@
+{
+  "relations": [
+    {"relation_type": "Cause_Effect", "definition": "One entity is the cause and the other is the resulting effect.", "aliases": ["Cause-Effect(e1,e2)", "Cause-Effect(e2,e1)", "causes", "result of"]},
+    {"relation_type": "Instrument_Agency", "definition": "An instrument is used by an agency or agent.", "aliases": ["Instrument-Agency(e1,e2)", "Instrument-Agency(e2,e1)", "used by"]},
+    {"relation_type": "Product_Producer", "definition": "A producer creates, manufactures, or authors a product.", "aliases": ["Product-Producer(e1,e2)", "Product-Producer(e2,e1)", "made by", "produced by"]},
+    {"relation_type": "Content_Container", "definition": "Content is contained in a physical or abstract container.", "aliases": ["Content-Container(e1,e2)", "Content-Container(e2,e1)", "in", "inside"]},
+    {"relation_type": "Entity_Origin", "definition": "An entity originates from a source, place, material, or creator.", "aliases": ["Entity-Origin(e1,e2)", "Entity-Origin(e2,e1)", "from", "derived from"]},
+    {"relation_type": "Entity_Destination", "definition": "An entity moves toward or is sent to a destination.", "aliases": ["Entity-Destination(e1,e2)", "Entity-Destination(e2,e1)", "to", "sent to"]},
+    {"relation_type": "Component_Whole", "definition": "One entity is a component, part, or member of a larger whole.", "aliases": ["Component-Whole(e1,e2)", "Component-Whole(e2,e1)", "part of"]},
+    {"relation_type": "Member_Collection", "definition": "A member belongs to a collection, group, or set.", "aliases": ["Member-Collection(e1,e2)", "Member-Collection(e2,e1)", "member of"]},
+    {"relation_type": "Message_Topic", "definition": "A message, document, or communication is about a topic.", "aliases": ["Message-Topic(e1,e2)", "Message-Topic(e2,e1)", "about"]}
+  ]
+}

@@ -1,275 +1,94 @@
-# ACE Events
+# Agent-Relation-Coder
 
-This repository contains the code for my AAAI 2026 paper on zero-shot event extraction with a multi-agent programming framework.
+This repository has been adapted from the original Agent-Event-Coder release into a zero-shot relation extraction project. The main path is now relation extraction only: the experiment entry point loads relation schemas, proposes entity-pair/relation hypotheses, generates executable Pydantic code for relation objects, verifies grounded triples, and evaluates exact relation triples.
 
-![AAAI 2026 Poster](./AAAI2026.png)
+## Method Adaptation
 
-## Paper
+The original paper's transferable idea is schema-as-code multi-agent extraction.  In the relation version:
 
-**Extracting Events Like Code: A Multi-Agent Programming Framework for Zero-Shot Event Extraction**  
-Quanjiang Guo, Sijie Wang, Jinchuan Zhang, Ben Zhang, Zhao Kang, Ling Tian, Ke Yan  
-*Proceedings of the AAAI Conference on Artificial Intelligence (AAAI 2026)*
+- Planning Agent proposes `(head, tail, relation_type)` hypotheses instead of event trigger hypotheses.
+- Relation schemas are rendered as Pydantic class definitions, preserving the original schema-as-code idea.
+- Coding Agent turns each hypothesis into executable Python code, assigning one Pydantic object to `result`.
+- Verification Agent executes the generated code with only the schema classes in scope, validates it with Pydantic, then checks head/tail/evidence grounding in the source text.
+- Evaluation reports micro triple precision/recall/F1 and relation-label classification F1.
 
-## Overview
+## Chosen Datasets
 
-`ACE Events` is a clean public-release project for event extraction experiments on ACE-style benchmarks. It includes the current best-performing main pipeline code, evaluation scripts, schema prompt files, lightweight public experiment resources, and a simplified project structure suitable for GitHub release.
+Primary datasets for the zero-shot RE version:
 
-### Supported tasks
+- `fewrel`: best first benchmark for unseen-relation zero-shot splits.
+- `wiki-zsl`: purpose-built zero-shot relation classification over Wikidata-style relations.
+- `retacred`: cleaner TACRED-style sentence-level relation classification.
+- `tacred`: broad news/web relation classification baseline with `no_relation`.
+- `semeval2010`: compact sanity benchmark with interpretable relation names.
+- `scierc`: domain-transfer benchmark for scientific relation extraction.
 
-- End-to-end event extraction: `ace05-en`, `casie`, `genia2011`
-- Event detection: `fewevent`, `speed`
+Schema starter files live in `utils/re_schema_generation/init_prompts/`. For full experiments, replace or extend those files with the exact relation inventory and definitions used by your split.
 
-### Included in this repository
+## Chosen Baselines
 
-- Core runnable source files only
-- Multi-agent planning / coding / verification pipeline
-- Public paper-eval split resources
-- Official scorer wrapper and schema prompt files
-- `models/` placeholder directory for local checkpoints
-- `requirements.txt`, `LICENSE`, and a GitHub-friendly README
+Use these as the corresponding RE baselines:
 
-## Repository structure
+- `DirectRE`: one-step zero-shot JSON prediction.
+- `CoT-RE`: DirectRE with brief evidence reasoning before final JSON.
+- `DecomposeRE`: entity-pair proposal followed by relation classification.
+- `GuidelineRE`: relation definitions and typed head/tail constraints in a code/schema prompt.
+- `ChatIE-RE`: multi-turn QA-style relation extraction.
+- `ZS-BERT/RelationPrompt`: historical specialist zero-shot RE baselines when non-LLM comparisons are needed.
 
-- `main_experiment.py`: main experiment entry point
-- `aec_pipeline.py`: multi-agent orchestration
-- `planning_agent.py`: trigger/event planning
-- `coding_agent.py`: argument/event construction
-- `verification_agent.py`: trigger/argument verification
-- `llm_utils.py`: OpenAI-compatible LLM client utilities
-- `datasets/paper_eval_splits/`: public evaluation split resources included in this release
-- `utils/code_schema_generation/init_prompts/`: schema prompt files for raw E2E mode
-- `utils/code_evaluation/`: official evaluation wrapper
-- `models/`: put local model checkpoints here if needed
-- `results/`: recommended output directory for experiment results
+## Data Format
 
-## Installation
+The loader accepts JSONL or JSON records under:
 
-We recommend Python 3.11.
-
-```bash
-pip install -r requirements.txt
+```text
+datasets/relation_splits/{dataset_name}/{split}.jsonl
+datasets/relation_splits/{dataset_name}/{split}.json
 ```
 
-## Model support
+Preferred normalized fields:
 
-This project supports any OpenAI-compatible endpoint.
+```json
+{
+  "id": "sample-1",
+  "text": "Ada Lovelace was born in London.",
+  "candidate_pairs": [{"head": "Ada Lovelace", "tail": "London"}],
+  "relations": [{"head": "Ada Lovelace", "tail": "London", "relation_type": "place_of_birth"}]
+}
+```
 
-### Open-weight models
+The loader also handles common FewRel/TACRED-style fields such as `tokens`, `h`, `t`, `relation`, `subj_start`, `subj_end`, `obj_start`, and `obj_end`.
 
-The strongest local open-weight results in this codebase currently come from the Qwen family, especially:
+## Quick Start
 
-- `Qwen/Qwen2.5-14B-Instruct`
-- `Qwen/Qwen2.5-72B-Instruct`
+A tiny demo split is included for smoke testing:
 
-The codebase also supports other OpenAI-compatible local models such as Llama 3 served by vLLM or another compatible backend.
+```bash
+python main_experiment.py \
+  --dataset_name fewrel \
+  --split test \
+  --max_samples 2 \
+  --no_progress \
+  --output_file ./results/fewrel_demo.json
+```
 
-### Built-in model aliases
-
-- `llama3-8B` -> `meta-llama/Meta-Llama-3-8B-Instruct`
-- `llama3-70B` -> `meta-llama/Meta-Llama-3-70B-Instruct`
-- `gpt3.5-turbo` -> `gpt-3.5-turbo`
-- `gpt4o` -> `gpt-4o`
-
-## Model setup examples
-
-### Example: local Qwen endpoint
+LLM-backed run with an OpenAI-compatible endpoint:
 
 ```bash
 export AEC_LLM_BASE_URL="http://127.0.0.1:8000/v1"
 export AEC_LLM_API_KEY="EMPTY"
 export AEC_LLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
-export AEC_LLM_TIMEOUT=240
-export AEC_LLM_RETRIES=1
-export AEC_LLM_FAIL_SOFT=1
-export AEC_LLM_VERBOSE=1
-export AEC_LLM_TOP_P=1.0
-export AEC_LLM_SEED=1234
-export PYTHONDONTWRITEBYTECODE=1
-```
 
-### Example: local alias-based setup
-
-```bash
-export AEC_LLM_BASE_URL="http://127.0.0.1:8000/v1"
-export AEC_LLM_API_KEY="EMPTY"
-export AEC_LLM_MODEL="llama3-8B"
-export AEC_LLM_TIMEOUT=240
-export AEC_LLM_RETRIES=1
-export AEC_LLM_FAIL_SOFT=1
-export AEC_LLM_VERBOSE=1
-export AEC_LLM_TOP_P=1.0
-export AEC_LLM_SEED=1234
-export PYTHONDONTWRITEBYTECODE=1
-```
-
-### Example: third-party compatible API
-
-```bash
-export AEC_LLM_BASE_URL="https://your-openai-compatible-endpoint/v1"
-export AEC_LLM_API_KEY="YOUR_API_KEY"
-export AEC_LLM_MODEL="gpt-4o"
-export AEC_LLM_TIMEOUT=240
-export AEC_LLM_RETRIES=1
-export AEC_LLM_FAIL_SOFT=1
-export AEC_LLM_VERBOSE=1
-export AEC_LLM_TOP_P=1.0
-export AEC_LLM_SEED=1234
-export PYTHONDONTWRITEBYTECODE=1
-```
-
-## Quick start
-
-### Smoke test
-
-```bash
 python main_experiment.py \
-  --dataset_name casie \
+  --dataset_name fewrel \
   --split test \
-  --paper_eval \
-  --sample_mode raw_e2e \
-  --max_samples 10 \
   --use_llm_plan \
   --use_llm_coding \
-  --planning_profile casie \
-  --planning_backend dicore \
-  --trigger_adapter none \
-  --output_adapter none \
-  --argument_mode hybrid \
   --max_hypotheses 8 \
-  --raw_e2e_schema_mode gold \
-  --output_file ./results/casie_smoke10.json
+  --output_file ./results/fewrel_re.json
 ```
 
-## Main experiment commands
-
-### CASIE
+Print the selected datasets and baselines:
 
 ```bash
-python main_experiment.py \
-  --dataset_name casie \
-  --split test \
-  --paper_eval \
-  --sample_mode raw_e2e \
-  --max_samples 50 \
-  --use_llm_plan \
-  --use_llm_coding \
-  --planning_profile casie \
-  --planning_backend dicore \
-  --trigger_adapter none \
-  --output_adapter none \
-  --argument_mode hybrid \
-  --max_hypotheses 8 \
-  --raw_e2e_schema_mode gold \
-  --save_trace \
-  --output_file ./results/casie_qwen14b_50.json
-```
-
-### GENIA 2011
-
-```bash
-python main_experiment.py \
-  --dataset_name genia2011 \
-  --split test \
-  --paper_eval \
-  --sample_mode raw_e2e \
-  --max_samples 250 \
-  --use_llm_plan \
-  --use_llm_coding \
-  --planning_profile genia \
-  --planning_backend dicore \
-  --trigger_adapter none \
-  --output_adapter none \
-  --argument_mode hybrid \
-  --max_hypotheses 8 \
-  --raw_e2e_schema_mode gold \
-  --save_trace \
-  --output_file ./results/genia_qwen14b_250.json
-```
-
-### FewEvent
-
-```bash
-python main_experiment.py \
-  --dataset_name fewevent \
-  --split test \
-  --paper_eval \
-  --sample_mode raw_e2e \
-  --max_samples 250 \
-  --use_llm_plan \
-  --use_llm_coding \
-  --planning_profile generic \
-  --planning_backend dicore \
-  --trigger_adapter none \
-  --output_adapter none \
-  --argument_mode hybrid \
-  --max_hypotheses 6 \
-  --raw_e2e_schema_mode gold \
-  --save_trace \
-  --output_file ./results/fewevent_qwen14b_250.json
-```
-
-### SPEED
-
-```bash
-python main_experiment.py \
-  --dataset_name speed \
-  --split test \
-  --paper_eval \
-  --sample_mode raw_e2e \
-  --max_samples 250 \
-  --use_llm_plan \
-  --use_llm_coding \
-  --planning_profile generic \
-  --planning_backend dicore \
-  --trigger_adapter none \
-  --output_adapter none \
-  --argument_mode hybrid \
-  --max_hypotheses 6 \
-  --raw_e2e_schema_mode gold \
-  --save_trace \
-  --output_file ./results/speed_qwen14b_250.json
-```
-
-## Outputs
-
-Each run writes:
-
-- a full JSON file to `--output_file`
-- a light JSON file with the same stem and `.light.json` suffix
-
-Only **Primary metrics** are saved and printed:
-
-- trigger identification: precision / recall / F1
-- event identification: precision / recall / F1
-- argument identification: precision / recall / F1
-- argument classification: precision / recall / F1
-
-## Dataset and license note
-
-Due to license reason, the ACE 2005 dataset is only accessible to those with `LDC2006T06` license.
-
-Therefore, this repository does **not** provide the raw ACE 2005 dataset itself, and this public release intentionally excludes non-public preprocessing artifacts and heavy derived resources. Please obtain the dataset from LDC and preprocess it according to your licensed access.
-
-For other datasets, this repository only includes the lightweight public split resources needed for release-oriented reproduction. If you want to fully rebuild all processed inputs from scratch, you should prepare the corresponding raw datasets separately according to their original licenses.
-
-## Notes
-
-- `genia2011` currently expects a matching schema prompt file. Add `utils/code_schema_generation/init_prompts/genia2013.txt` if you want to run GENIA raw E2E mode without errors.
-- If you use a third-party compatible API, always verify the exact model name supported by that provider.
-- Local model weights are intentionally excluded from GitHub; place them under `models/`.
-
-## Citation
-
-If you use this code, please cite:
-
-```bibtex
-@inproceedings{guo2026extracting,
-  title={Extracting Events Like Code: A Multi-Agent Programming Framework for Zero-Shot Event Extraction},
-  author={Guo, Quanjiang and Wang, Sijie and Zhang, Jinchuan and Zhang, Ben and Kang, Zhao and Tian, Ling and Yan, Ke},
-  booktitle={Proceedings of the AAAI Conference on Artificial Intelligence},
-  volume={40},
-  number={37},
-  pages={30880--30887},
-  year={2026}
-}
+python main_experiment.py --list_recommendations
 ```

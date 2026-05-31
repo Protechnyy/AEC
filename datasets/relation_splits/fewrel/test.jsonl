@@ -1,0 +1,2 @@
+{"id": "demo-1", "tokens": ["Ada", "Lovelace", "was", "born", "in", "London", "and", "worked", "on", "Charles", "Babbage", "'s", "Analytical", "Engine", "."], "h": ["Ada Lovelace", "Q7259", [[0, 1]]], "t": ["London", "Q84", [[5, 5]]], "relation": "place_of_birth"}
+{"id": "demo-2", "tokens": ["Frankenstein", "was", "written", "by", "Mary", "Shelley", "in", "1818", "."], "h": ["Frankenstein", "Q483034", [[0, 0]]], "t": ["Mary Shelley", "Q47152", [[4, 5]]], "relation": "author"}

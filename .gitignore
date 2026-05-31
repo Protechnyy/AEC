@@ -37,3 +37,5 @@ Thumbs.db
 *.pth
 *.ckpt
 *.safetensors
+
+arXiv-2511.13118v1/

@@ -1,0 +1,12 @@
+{
+  "relations": [
+    {"relation_type": "country", "definition": "The head entity is associated with the tail country.", "aliases": ["P17", "country"]},
+    {"relation_type": "place_of_birth", "definition": "The head person was born in the tail place.", "aliases": ["P19", "birth place", "born in"]},
+    {"relation_type": "place_of_death", "definition": "The head person died in the tail place.", "aliases": ["P20", "died in"]},
+    {"relation_type": "located_in", "definition": "The head entity is located in the tail place.", "aliases": ["P131", "located in"]},
+    {"relation_type": "occupation", "definition": "The head person has the tail occupation.", "aliases": ["P106", "occupation"]},
+    {"relation_type": "part_of", "definition": "The head entity is part of the tail entity.", "aliases": ["P361", "part of"]},
+    {"relation_type": "owned_by", "definition": "The head entity is owned by the tail entity.", "aliases": ["P127", "owned by"]},
+    {"relation_type": "author", "definition": "The head work was created or written by the tail author.", "aliases": ["P50", "author", "written by"]}
+  ]
+}

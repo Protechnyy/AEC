@@ -1,0 +1,13 @@
+{
+  "relations": [
+    {"relation_type": "per_age", "definition": "A person has an age.", "aliases": ["per:age"]},
+    {"relation_type": "per_employee_of", "definition": "A person is employed by or affiliated with an organization.", "aliases": ["per:employee_of", "works for"]},
+    {"relation_type": "per_schools_attended", "definition": "A person attended a school or university.", "aliases": ["per:schools_attended", "attended"]},
+    {"relation_type": "per_spouse", "definition": "A person is married to another person.", "aliases": ["per:spouse"]},
+    {"relation_type": "per_title", "definition": "A person has an occupational title.", "aliases": ["per:title"]},
+    {"relation_type": "org_founded_by", "definition": "An organization was founded by a person or organization.", "aliases": ["org:founded_by"]},
+    {"relation_type": "org_member_of", "definition": "An organization belongs to another organization.", "aliases": ["org:member_of"]},
+    {"relation_type": "org_parents", "definition": "An organization has a parent organization.", "aliases": ["org:parents"]},
+    {"relation_type": "org_top_members_employees", "definition": "An organization has a top member or employee.", "aliases": ["org:top_members/employees"]}
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "relations": [
+    {"relation_type": "Used_for", "definition": "A method, model, dataset, or tool is used for a task or purpose.", "aliases": ["USED-FOR", "used for"]},
+    {"relation_type": "Feature_of", "definition": "An entity is a feature or property of another scientific entity.", "aliases": ["FEATURE-OF", "feature of"]},
+    {"relation_type": "Part_of", "definition": "An entity is a component or part of another entity.", "aliases": ["PART-OF", "part of"]},
+    {"relation_type": "Compare", "definition": "Two scientific entities are compared.", "aliases": ["COMPARE", "compared with"]},
+    {"relation_type": "Evaluate_for", "definition": "A method or system is evaluated for a task, dataset, or metric.", "aliases": ["EVALUATE-FOR", "evaluated on"]},
+    {"relation_type": "Conjunction", "definition": "Two scientific entities are coordinated or grouped together.", "aliases": ["CONJUNCTION", "and"]}
+  ]
+}

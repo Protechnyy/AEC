@@ -1,136 +1,153 @@
+"""Verification agent for zero-shot relation extraction."""
+
 from __future__ import annotations
 
-import re
+import ast
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
-try:
-    from .event_schema import EventObject, EventSchema
-except ImportError:
-    from event_schema import EventObject, EventSchema
+from event_schema import BaseModel, RelationObject, RelationSchema
+
+
+def _norm(value: str) -> str:
+    return " ".join(value.split()).strip()
 
 
 @dataclass
 class VerificationError(Exception):
     message: str
     category: str
-    details: Dict[str, Any]
+    details: dict[str, Any]
 
     def __str__(self) -> str:
         return self.message
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "message": self.message,
-            "category": self.category,
-            "details": self.details,
-        }
+    def to_dict(self) -> dict[str, Any]:
+        return {"message": self.message, "category": self.category, "details": self.details}
 
 
 class VerificationAgent:
-    """Lightweight verifier for trigger and argument sanity checks."""
+    """Execute generated relation code and verify Pydantic/schema constraints."""
 
-    CLAUSE_BOUNDARY_RE = re.compile(r"[;]|\b(?:but|however|although|though|whereas|while)\b", re.IGNORECASE)
-    ROLE_SEMANTIC_HINTS: Dict[str, str] = {
-        "cve": r"\bCVE[- ]?\d{4}[- ]?\d{3,7}\b",
-        "payment_method": r"\b(?:bitcoin|bitcoins|ethereum|gift cards?|cryptocurrency|wire transfer)\b",
-        "time": r"\b(?:today|yesterday|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|\d{4})\b",
-        "price": r"(?:\$|£|€)\s?\d|\b\d+(?:\.\d+)?\s*(?:bitcoin|bitcoins|dollars|euros|pounds)\b",
-    }
-
-    def verify(self, event_obj: EventObject, schema: EventSchema, text: str) -> bool:
-        if event_obj.event_type != schema.event_type:
+    def verify_code(
+        self,
+        code: str,
+        schemas: dict[str, RelationSchema],
+        text: str,
+        *,
+        confidence: float = 0.0,
+        rationale: str = "",
+    ) -> RelationObject:
+        self._check_code_shape(code)
+        model_classes = {schema.class_name: schema.generate_pydantic_model() for schema in schemas.values()}
+        namespace: dict[str, Any] = dict(model_classes)
+        try:
+            exec(compile(code, "<relation-coder>", "exec"), {"__builtins__": {}}, namespace)
+        except Exception as exc:
             raise VerificationError(
-                f"Event type mismatch: expected {schema.event_type!r}, got {event_obj.event_type!r}.",
-                "event_type_mismatch",
-                {"expected": schema.event_type, "actual": event_obj.event_type},
+                f"Generated relation code failed to execute: {exc}",
+                "code_execution_error",
+                {"error": f"{exc.__class__.__name__}: {exc}", "code": code},
+            ) from exc
+
+        result = namespace.get("result")
+        if result is None:
+            raise VerificationError(
+                "Generated code must assign exactly one relation object to variable `result`.",
+                "missing_result",
+                {"code": code},
+            )
+        if not isinstance(result, BaseModel):
+            raise VerificationError(
+                "`result` must be an instance of one of the generated Pydantic relation classes.",
+                "result_not_pydantic_model",
+                {"actual_type": type(result).__name__},
             )
 
-        trigger = self._normalize_whitespace(event_obj.trigger)
-        if not trigger or trigger.lower() not in self._normalize_whitespace(text).lower():
-            raise VerificationError(
-                f"Trigger {event_obj.trigger!r} was not found in the source text.",
-                "trigger_not_in_text",
-                {"trigger": event_obj.trigger},
-            )
+        payload = result.model_dump() if hasattr(result, "model_dump") else result.dict()
+        relation = RelationObject(
+            relation_type=str(payload.get("relation_type", "")),
+            head=str(payload.get("head", "")),
+            tail=str(payload.get("tail", "")),
+            evidence=str(payload.get("evidence", "")),
+            confidence=confidence,
+            rationale=rationale,
+        )
+        self.verify(relation, schemas, text)
+        return relation
 
-        for role, values in event_obj.arguments.items():
-            if role not in schema.roles:
-                continue
-            if not isinstance(values, list):
+    def _check_code_shape(self, code: str) -> None:
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as exc:
+            raise VerificationError(
+                f"Generated code has invalid Python syntax: {exc}",
+                "syntax_error",
+                {"error": str(exc), "code": code},
+            ) from exc
+        allowed_nodes = (
+            ast.Module,
+            ast.Assign,
+            ast.Name,
+            ast.Load,
+            ast.Store,
+            ast.Call,
+            ast.keyword,
+            ast.Constant,
+            ast.Expr,
+        )
+        for node in ast.walk(tree):
+            if not isinstance(node, allowed_nodes):
                 raise VerificationError(
-                    f"Role {role!r} must be a list of spans.",
-                    "argument_role_semantics",
-                    {"role": role, "value": values},
+                    f"Generated code contains unsupported syntax: {node.__class__.__name__}.",
+                    "unsafe_code_shape",
+                    {"node": node.__class__.__name__, "code": code},
                 )
-            for value in values:
-                if not isinstance(value, str):
-                    raise VerificationError(
-                        f"Role {role!r} contains a non-string span.",
-                        "argument_role_semantics",
-                        {"role": role, "value": value},
-                    )
-                self._verify_argument(trigger, role, value, text)
+        assignments = [node for node in tree.body if isinstance(node, ast.Assign)]
+        if len(assignments) != 1:
+            raise VerificationError(
+                "Generated code must contain exactly one assignment to `result`.",
+                "unsafe_code_shape",
+                {"assignment_count": len(assignments), "code": code},
+            )
+        target = assignments[0].targets[0] if assignments[0].targets else None
+        if not isinstance(target, ast.Name) or target.id != "result":
+            raise VerificationError(
+                "Generated code must assign the relation object to `result`.",
+                "missing_result",
+                {"code": code},
+            )
+
+    def verify(self, relation: RelationObject, schemas: dict[str, RelationSchema], text: str) -> bool:
+        if relation.relation_type not in schemas:
+            raise VerificationError(
+                f"Unknown relation type {relation.relation_type!r}.",
+                "relation_type_not_in_schema",
+                {"relation_type": relation.relation_type},
+            )
+
+        normalized_text = _norm(text).lower()
+        for field_name in ("head", "tail"):
+            value = _norm(getattr(relation, field_name))
+            if not value or value.lower() not in normalized_text:
+                raise VerificationError(
+                    f"{field_name} span {value!r} is not grounded in the source text.",
+                    "entity_not_in_text",
+                    {"field": field_name, "value": value},
+                )
+
+        if relation.head.lower() == relation.tail.lower():
+            raise VerificationError(
+                "Head and tail entity spans must be distinct.",
+                "self_relation",
+                {"head": relation.head, "tail": relation.tail},
+            )
+
+        if relation.evidence and relation.evidence.lower() not in normalized_text:
+            raise VerificationError(
+                f"Evidence span {relation.evidence!r} is not grounded in the source text.",
+                "evidence_not_in_text",
+                {"evidence": relation.evidence},
+            )
+
         return True
-
-    def _verify_argument(self, trigger: str, role: str, value: str, text: str) -> None:
-        cleaned = self._normalize_whitespace(value)
-        if not cleaned:
-            raise VerificationError(
-                f"Role {role!r} contains an empty argument span.",
-                "argument_role_semantics",
-                {"role": role, "value": value},
-            )
-        if cleaned.lower() not in self._normalize_whitespace(text).lower():
-            raise VerificationError(
-                f"Argument span {value!r} for role {role!r} is not grounded in the text.",
-                "argument_not_locally_bound",
-                {"role": role, "value": value},
-            )
-        if not self._is_locally_bound(trigger, cleaned, text):
-            raise VerificationError(
-                f"Argument span {value!r} for role {role!r} is too far from the trigger.",
-                "argument_not_locally_bound",
-                {"role": role, "value": value},
-            )
-        if self._crosses_clause_boundary(trigger, cleaned, text):
-            raise VerificationError(
-                f"Argument span {value!r} for role {role!r} crosses a clause boundary with the trigger.",
-                "argument_crosses_clause_boundary",
-                {"role": role, "value": value},
-            )
-        if not self._matches_role_semantics(role, cleaned):
-            raise VerificationError(
-                f"Argument span {value!r} does not match the expected semantics for role {role!r}.",
-                "argument_role_semantics",
-                {"role": role, "value": value},
-            )
-
-    def _is_locally_bound(self, trigger: str, value: str, text: str, window: int = 260) -> bool:
-        normalized_text = self._normalize_whitespace(text)
-        trigger_idx = normalized_text.lower().find(self._normalize_whitespace(trigger).lower())
-        value_idx = normalized_text.lower().find(value.lower())
-        if trigger_idx == -1 or value_idx == -1:
-            return False
-        return abs(value_idx - trigger_idx) <= window
-
-    def _crosses_clause_boundary(self, trigger: str, value: str, text: str) -> bool:
-        normalized_text = self._normalize_whitespace(text)
-        trigger_idx = normalized_text.lower().find(self._normalize_whitespace(trigger).lower())
-        value_idx = normalized_text.lower().find(value.lower())
-        if trigger_idx == -1 or value_idx == -1:
-            return True
-        start = min(trigger_idx, value_idx)
-        end = max(trigger_idx, value_idx)
-        between = normalized_text[start:end]
-        return bool(self.CLAUSE_BOUNDARY_RE.search(between))
-
-    def _matches_role_semantics(self, role: str, value: str) -> bool:
-        role_key = role.lower().replace("-", "_")
-        pattern = self.ROLE_SEMANTIC_HINTS.get(role_key)
-        if not pattern:
-            return True
-        return bool(re.search(pattern, value, flags=re.IGNORECASE))
-
-    def _normalize_whitespace(self, value: str) -> str:
-        return " ".join(value.split())

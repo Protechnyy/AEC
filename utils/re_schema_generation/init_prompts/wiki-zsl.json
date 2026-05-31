@@ -1,0 +1,12 @@
+{
+  "relations": [
+    {"relation_type": "country", "definition": "An entity is associated with a country.", "aliases": ["P17", "country"]},
+    {"relation_type": "capital", "definition": "A place has a capital city.", "aliases": ["P36", "capital"]},
+    {"relation_type": "located_in", "definition": "An entity is located in a larger place or administrative unit.", "aliases": ["P131", "located in"]},
+    {"relation_type": "instance_of", "definition": "The head entity is an instance of the tail class.", "aliases": ["P31", "instance of"]},
+    {"relation_type": "subclass_of", "definition": "The head class is a subclass of the tail class.", "aliases": ["P279", "subclass of"]},
+    {"relation_type": "part_of", "definition": "The head entity is part of the tail entity.", "aliases": ["P361", "part of"]},
+    {"relation_type": "creator", "definition": "The head work or object was created by the tail entity.", "aliases": ["P170", "creator"]},
+    {"relation_type": "author", "definition": "The head work was written by the tail author.", "aliases": ["P50", "author"]}
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "relations": [
+    {"relation_type": "per_age", "definition": "A person has an age.", "head_type": "PERSON", "tail_type": "NUMBER", "aliases": ["per:age", "age"]},
+    {"relation_type": "per_children", "definition": "A person has a child.", "head_type": "PERSON", "tail_type": "PERSON", "aliases": ["per:children", "child", "children"]},
+    {"relation_type": "per_cities_of_residence", "definition": "A person lives in a city.", "head_type": "PERSON", "tail_type": "CITY", "aliases": ["per:cities_of_residence", "lives in", "resident of"]},
+    {"relation_type": "per_city_of_birth", "definition": "A person was born in a city.", "head_type": "PERSON", "tail_type": "CITY", "aliases": ["per:city_of_birth", "born in"]},
+    {"relation_type": "per_city_of_death", "definition": "A person died in a city.", "head_type": "PERSON", "tail_type": "CITY", "aliases": ["per:city_of_death", "died in"]},
+    {"relation_type": "per_countries_of_residence", "definition": "A person lives in a country.", "head_type": "PERSON", "tail_type": "COUNTRY", "aliases": ["per:countries_of_residence"]},
+    {"relation_type": "per_country_of_birth", "definition": "A person was born in a country.", "head_type": "PERSON", "tail_type": "COUNTRY", "aliases": ["per:country_of_birth"]},
+    {"relation_type": "per_country_of_death", "definition": "A person died in a country.", "head_type": "PERSON", "tail_type": "COUNTRY", "aliases": ["per:country_of_death"]},
+    {"relation_type": "per_employee_of", "definition": "A person is employed by or works for an organization.", "head_type": "PERSON", "tail_type": "ORGANIZATION", "aliases": ["per:employee_of", "works for", "employee of"]},
+    {"relation_type": "per_origin", "definition": "A person has a nationality, ethnicity, or origin.", "head_type": "PERSON", "tail_type": "LOCATION", "aliases": ["per:origin", "nationality"]},
+    {"relation_type": "per_parents", "definition": "A person has a parent.", "head_type": "PERSON", "tail_type": "PERSON", "aliases": ["per:parents", "parent"]},
+    {"relation_type": "per_siblings", "definition": "A person has a sibling.", "head_type": "PERSON", "tail_type": "PERSON", "aliases": ["per:siblings", "sibling"]},
+    {"relation_type": "per_spouse", "definition": "A person is married to a spouse.", "head_type": "PERSON", "tail_type": "PERSON", "aliases": ["per:spouse", "wife", "husband", "married"]},
+    {"relation_type": "per_title", "definition": "A person holds a title or role.", "head_type": "PERSON", "tail_type": "TITLE", "aliases": ["per:title", "title"]},
+    {"relation_type": "org_alternate_names", "definition": "An organization has an alternate name.", "head_type": "ORGANIZATION", "tail_type": "STRING", "aliases": ["org:alternate_names", "also known as"]},
+    {"relation_type": "org_city_of_headquarters", "definition": "An organization is headquartered in a city.", "head_type": "ORGANIZATION", "tail_type": "CITY", "aliases": ["org:city_of_headquarters", "headquartered in"]},
+    {"relation_type": "org_country_of_headquarters", "definition": "An organization is headquartered in a country.", "head_type": "ORGANIZATION", "tail_type": "COUNTRY", "aliases": ["org:country_of_headquarters"]},
+    {"relation_type": "org_founded_by", "definition": "An organization was founded by a person or organization.", "head_type": "ORGANIZATION", "tail_type": "ENTITY", "aliases": ["org:founded_by", "founded by"]},
+    {"relation_type": "org_members", "definition": "An organization has a member.", "head_type": "ORGANIZATION", "tail_type": "ENTITY", "aliases": ["org:members", "member"]},
+    {"relation_type": "org_member_of", "definition": "An organization is a member or subsidiary of another organization.", "head_type": "ORGANIZATION", "tail_type": "ORGANIZATION", "aliases": ["org:member_of", "subsidiary of", "part of"]},
+    {"relation_type": "org_parents", "definition": "An organization has a parent organization.", "head_type": "ORGANIZATION", "tail_type": "ORGANIZATION", "aliases": ["org:parents", "parent company"]},
+    {"relation_type": "org_top_members_employees", "definition": "An organization has a top member or employee.", "head_type": "ORGANIZATION", "tail_type": "PERSON", "aliases": ["org:top_members/employees", "CEO", "president", "chairman"]}
+  ]
+}
